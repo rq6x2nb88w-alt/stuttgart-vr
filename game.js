@@ -814,7 +814,7 @@ function resetVehicle(nearPlayer) {
   const i = burning.indexOf(c.fl); if (i >= 0) burning.splice(i, 1);
   Object.assign(c.fl, { burning: false, done: false, heat: 0, burnT: 0 });
   c.fl.mats.forEach((m, k) => c.fl.orig[k] && m.color.copy(c.fl.orig[k]));
-  c.dead = false; c.hp = 6; c.speed = 0; c.glassMat.visible = true; c.spin = 0; c.gyS = c.slS = c.sdS = c.gyF = c.pgy = c.pgvy = c.lastGvy = undefined; c.sus = {}; c.air = false; c.vy = 0; c.vl = 0; c.drift = 0; c.slip = 0;
+  c.dead = false; c.hp = 6; c.speed = 0; c.glassMat.visible = true; c.spin = 0; c.gyS = c.slS = c.sdS = c.gyF = c.pgy = c.pgvy = c.lastGvy = undefined; c.sus = {}; c.air = false; c.vy = 0;
   if (nearPlayer) {
     camera.getWorldDirection(v1); v1.y = 0; v1.normalize();
     c.group.position.set(headWorld.x + v1.x * 4, 0, headWorld.z + v1.z * 4); c.heading = Math.atan2(v1.x, v1.z) + Math.PI / 2;
@@ -958,14 +958,13 @@ class PSys {
       life[i] -= dt; const k = Math.max(0, life[i] / max[i]);
       vel[i * 3 + 1] += buoy * dt;
       pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
-      if (this.smoke === 'tire') { const c = .86 + .1 * (1 - k); col.set([c, c, c * 1.02, Math.min(.75, k * (1 - k) * 3.2)], i * 4); }   // dichter, heller Reifenqualm
-      else if (this.smoke) { const c = .25 + .2 * (1 - k); col.set([c, c, c, k * (1 - k) * 2.2], i * 4); }
+      if (this.smoke) { const c = .25 + .2 * (1 - k); col.set([c, c, c, k * (1 - k) * 2.2], i * 4); }
       else col.set([1, .25 + .65 * k * k, .08 * k, k], i * 4);
     }
     this.g.attributes.position.needsUpdate = true; this.g.attributes.color.needsUpdate = true;
   }
 }
-const fireBig = new PSys(1600, 3.2, true), fireSmall = new PSys(700, .35, true), smoke = new PSys(900, 6, false, true), tireSmokePS = new PSys(900, 4.6, false, 'tire');
+const fireBig = new PSys(1600, 3.2, true), fireSmall = new PSys(700, .35, true), smoke = new PSys(900, 6, false, true);
 
 const DEB = 220;
 const debMesh = new THREE.InstancedMesh(BOX, M(0xffffff, { roughness: .8 }), DEB);
@@ -1022,18 +1021,13 @@ function playAt(buf, pos, vol = 1, ref = 6) {
   s.play();
 }
 let engine = null;
-// Motor-Stimme: Sägezahn + Rechteck durch Tiefpass, dazu ein gefiltertes Rauschen fürs Reifenquietschen
-let noiseBuf = null;
+// Motor-Stimme: Sägezahn + Rechteck durch Tiefpass
 function engineVoice(lp = 380) {
-  const o1 = AC.createOscillator(), o2 = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain(), mix = AC.createGain();
+  const o1 = AC.createOscillator(), o2 = AC.createOscillator(), f = AC.createBiquadFilter(), g = AC.createGain();
   o1.type = 'sawtooth'; o2.type = 'square'; f.type = 'lowpass'; f.frequency.value = lp; g.gain.value = .25;
-  o1.connect(f); o2.connect(f); f.connect(g); g.connect(mix); o1.start(); o2.start();
-  noiseBuf ||= mkBuf(1.5, (t, r) => r);
-  const ns = AC.createBufferSource(); ns.buffer = noiseBuf; ns.loop = true;
-  const bp = AC.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 1300; bp.Q.value = 6;
-  const sg = AC.createGain(); sg.gain.value = 0; ns.connect(bp); bp.connect(sg); sg.connect(mix); ns.start();
-  const pa = new THREE.PositionalAudio(listener); pa.setNodeSource(mix);
-  return { o1, o2, f, ns, bp, sg, pa, stop() { try { o1.stop(); o2.stop(); ns.stop(); mix.disconnect(); } catch (e) { } } };
+  o1.connect(f); o2.connect(f); f.connect(g); o1.start(); o2.start();
+  const pa = new THREE.PositionalAudio(listener); pa.setNodeSource(g);
+  return { o1, o2, f, pa, stop() { try { o1.stop(); o2.stop(); g.disconnect(); } catch (e) { } } };
 }
 function ensureEngine() {
   if (engine || AC.state !== 'running') return;
@@ -1049,7 +1043,6 @@ function remoteEngine(p, k, drive) {
   e.o1.frequency.value = 38 + s * 3.2; e.o2.frequency.value = 19 + s * 1.6;
   e.f.frequency.value = inside ? 380 : 900;                           // drinnen dumpf, draußen offener
   e.pa.setVolume(near ? (inside ? .5 : 1) : 0);
-  e.sg.gain.value = near ? clamp(((p.st?.c?.[13]) || 0) - 2, 0, 8) / 8 * .5 : 0;
 }
 const npcEng = []; let npcEngT = 0;
 function updNpcEngines(dt) {
@@ -2258,7 +2251,7 @@ function carAlert(title, text, col, short) {
   if (cl.on) { cl.popup = { t: time, text: short, col }; cl.drawT = 0; }
 }
 function fireAlert(why) {
-  if (time - lastFireAlert < 10 || time < 5) return; lastFireAlert = time;
+  if (time - lastFireAlert < 300 || time < 5) return; lastFireAlert = time;   // höchstens alle 5 Minuten eine Warnung
   carAlert('Gebäude brennt nach ' + why + '.', 'Wenn du ein brennendes Gebäude siehst, bitte halte dich fern, um Verletzungen zu vermeiden.', '#b3261e', 'Brennendes Gebäude');
 }
 
@@ -2402,26 +2395,9 @@ function updPlayerCar(dt) {
   let yawRate, steer = 0;
   if (sc) yawRate = -stx * 1.7 * clamp(Math.abs(c.speed) / 2.5, 0, 1) * (c.speed < 0 ? -1 : 1);
   else { c.steerS = (c.steerS || 0) + (-(c.spin / 4.7) * .6 - (c.steerS || 0)) * Math.min(1, dt * 10); steer = c.steerS; yawRate = c.speed / 2.8 * Math.tan(steer); }   // Lenkung geglättet (Hand-Zittern filtern)
-  // ---- Driften NUR mit Handbremse (PC: Leertaste · VR: X-Knopf oder linken Stick drücken). Normal lenken = Auto fährt genau dahin, wo es hinzeigt ----
-  const sp = Math.abs(c.speed), Lh = handBy('left');
-  const hbrake = !sc && player.inCar && !c.dead && (xrOn() ? !!(Lh?.gp?.buttons[4]?.pressed || Lh?.now[3]) : !!desk.keys.Space);
-  if (hbrake && sp > 5) c.drift = Math.min(1, (c.drift || 0) + dt * 5);
-  else if (!sc && sp > 30 && Math.abs(c.speed * yawRate) > 22) c.drift = Math.min(1, (c.drift || 0) + dt * 1.6);   // ab ~110 km/h hart eingelenkt -> Heck kommt
-  else c.drift = Math.max(0, (c.drift || 0) - dt * (Math.abs(c.vl || 0) < 1.5 ? 3 : .5));   // fängt sich, wenn das Rutschen nachlässt
-  if (!sc && sp > 3) { const cap = c.drift > .2 ? 2.4 : 10 / sp; yawRate = clamp(yawRate * (1 + .9 * c.drift), -cap, cap); }   // normal: max. ~1 g Querbeschleunigung
-  if (hbrake && !inAir) c.speed -= Math.sign(c.speed) * Math.min(sp, 3.5 * dt);   // Hinterräder blockieren
   if (inAir) yawRate = 0;            // in der Luft lenkt man nicht
-  c.yawRate = yawRate;
-  // Masse: beim Eindrehen behält das Auto seine alte Bewegung -> rutscht seitlich; die Reifen ziehen es zurück (wenig beim Driften)
-  const dth = yawRate * dt, vl0 = sc ? 0 : c.vl || 0;
-  let vl = vl0 * Math.cos(dth) - c.speed * Math.sin(dth);
-  if (!sc) c.speed = c.speed * Math.cos(dth) + vl0 * Math.sin(dth);
-  vl = sc ? 0 : vl * Math.exp(-(inAir ? 0 : 25 - 23.5 * c.drift) * dt);   // normal: volle Haftung (kein Rutschen), beim Driften wenig
-  c.speed -= Math.sign(c.speed) * Math.min(Math.abs(c.speed), Math.abs(vl) * .22 * dt);   // Rutschen bremst (mit Gas lässt sich der Drift halten)
-  c.vl = vl; c.heading += dth;
-  g.position.x += (Math.sin(c.heading) * c.speed + Math.cos(c.heading) * vl) * dt;
-  g.position.z += (Math.cos(c.heading) * c.speed - Math.sin(c.heading) * vl) * dt;
-  c.slip = sc ? 0 : Math.abs(vl) + (hbrake && sp > 3 ? sp * .2 : 0) + (thr > .9 && brk > .5 && sp < 6 && !inAir ? 7 : 0);   // Reifen quietschen/rauchen (Gas + Bremse = Burnout)
+  c.yawRate = yawRate; c.heading += yawRate * dt;
+  g.position.x += Math.sin(c.heading) * c.speed * dt; g.position.z += Math.cos(c.heading) * c.speed * dt;
   // Gelände: Höhe, Neigung nach vorne/hinten und zur Seite
   const sh = Math.sin(c.heading), chd = Math.cos(c.heading), wb = sc ? .4 : 1.4, tw = sc ? .12 : .85, x = g.position.x, z = g.position.z;
   const hf = groundAt(x + sh * wb, z + chd * wb), hb = groundAt(x - sh * wb, z - chd * wb), hl = groundAt(x + chd * tw, z - sh * tw), hr = groundAt(x - chd * tw, z + sh * tw);
@@ -2484,7 +2460,7 @@ function updPlayerCar(dt) {
       if (p.x > k.minX - r && p.x < k.maxX + r && p.z > k.minZ - r && p.z < k.maxZ + r) {
         const dx1 = p.x - (k.minX - r), dx2 = (k.maxX + r) - p.x, dz1 = p.z - (k.minZ - r), dz2 = (k.maxZ + r) - p.z, m = Math.min(dx1, dx2, dz1, dz2);
         if (m === dx1) g.position.x -= dx1; else if (m === dx2) g.position.x += dx2; else if (m === dz1) g.position.z -= dz1; else g.position.z += dz2;
-        crash(Math.abs(c.speed) + Math.abs(c.vl || 0), p); c.speed *= -.2; c.vl = (c.vl || 0) * .2;
+        crash(Math.abs(c.speed), p); c.speed *= -.2;
       }
     }
   }
@@ -2493,7 +2469,7 @@ function updPlayerCar(dt) {
     const d = o.group.position.distanceTo(g.position);
     if (d < RR) {
       v1.subVectors(g.position, o.group.position).setY(0).normalize(); g.position.addScaledVector(v1, RR - d);
-      const imp = Math.abs(c.speed - o.speed * .5); crash(imp, o.group.position); c.speed *= -.25; c.vl = (c.vl || 0) * .3; o.speed = 0;
+      const imp = Math.abs(c.speed - o.speed * .5); crash(imp, o.group.position); c.speed *= -.25; o.speed = 0;
       if (imp > 10) { damageCarNet(o, 3); damageCar(c, 1); }
     }
   }
@@ -2502,23 +2478,6 @@ function updPlayerCar(dt) {
     const s = Math.abs(c.speed);
     if (sc) { engine.o1.frequency.value = 180 + s * 40; engine.o2.frequency.value = 90 + s * 20; engine.pa.setVolume(player.inCar && s > .3 ? .12 : 0); }
     else { engine.o1.frequency.value = 38 + s * 3.2 + thr * 12; engine.o2.frequency.value = 19 + s * 1.6; engine.pa.setVolume(player.inCar && !c.dead ? .5 : 0); }
-    // Reifen quietschen beim Driften
-    engine.sg.gain.setTargetAtTime(player.inCar && !inAir ? clamp((c.slip - 2) / 8, 0, 1) * .45 : 0, AC.currentTime, .05);
-    engine.bp.frequency.value = 1250 + Math.sin(time * 13) * 140 + s * 6;
-  }
-  // Reifenrauch an den Hinterrädern
-  if (!sc && !inAir && !c.dead && c.slip > 2.2) tireSmoke(g, c.wheels.filter(w => !w.front).map(w => V(w.c.x, .12, w.c.z)), c.slip, dt, Math.sin(c.heading) * c.speed, Math.cos(c.heading) * c.speed);
-}
-// Reifenrauch: helle, dicke Wolken, die langsam aufsteigen und hinter dem Auto stehen bleiben
-function tireSmoke(root, wheelLocals, slip, dt, vx, vz) {
-  const rate = Math.min(70, (slip - 2) * 11);
-  for (const wl of wheelLocals) {
-    let n = rate * dt;
-    while (n > 0) {
-      if (n < 1 && Math.random() > n) break; n--;
-      const p = root.localToWorld(v3.copy(wl));
-      tireSmokePS.spawn(p.x + rand(-.25, .25), p.y + .05, p.z + rand(-.25, .25), vx * .12 + rand(-.7, .7), rand(.2, .9), vz * .12 + rand(-.7, .7), rand(1.8, 3.2));
-    }
   }
 }
 function crash(imp, p) {
@@ -2925,7 +2884,7 @@ let vigTarget = 0;
 // ===================================================================
 // Wetter: manchmal Regen – nasse, spiegelnde Straßen (vom Host für alle gleich)
 // ===================================================================
-const weather = { k: 0, target: 0, t: 90 };
+const weather = { k: 0, target: 0, t: 900 };   // 15 Minuten trocken, 15 Minuten Regen, immer im Wechsel
 let sunBase = 2.6, hemiBase = .9, fogBase = scene.fog.color.clone();
 const rainFog = new THREE.Color(.42, .45, .5);
 const rain = (() => {
@@ -2939,7 +2898,7 @@ let rainSnd = null;
 function updWeather(dt) {
   if (amHost()) {
     weather.t -= dt;
-    if (weather.t <= 0) { weather.t = rand(150, 360); weather.target = Math.random() < .4 ? 1 : 0; share('w', { v: weather.target }); }
+    if (weather.t <= 0) { weather.t = 900; weather.target = weather.target ? 0 : 1; share('w', { v: weather.target }); }
   }
   const was = weather.k > .5;
   weather.k += (weather.target - weather.k) * Math.min(1, dt * .12);
@@ -3117,7 +3076,7 @@ function updMission(dt) {
 // Der Host entscheidet (gleich für alle).
 // ===================================================================
 const VIL_REWARD = 600;
-const vil = { i: -1, ped: null, t0: 0, shotT: 0, nextT: rand(150, 260), mats: [] };
+const vil = { i: -1, ped: null, t0: 0, shotT: 0, nextT: rand(1500, 2400), mats: [] };   // selten: frühestens nach ~25–40 Minuten
 const vilBeam = new THREE.Mesh(new THREE.CylinderGeometry(.7, .7, 140, 14, 1, true), new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: .32, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
 const vilBubble = new THREE.Mesh(new THREE.SphereGeometry(.5, 20, 14), new THREE.MeshBasicMaterial({ color: 0xff2a2a, transparent: true, opacity: .5, depthWrite: false, blending: THREE.AdditiveBlending }));
 vilBeam.visible = vilBubble.visible = false; scene.add(vilBeam, vilBubble);
@@ -3146,7 +3105,7 @@ function updVillain(dt) {
     if (!host) return;
     vil.nextT -= dt;
     if (vil.nextT <= 0) {
-      vil.nextT = rand(200, 380);
+      vil.nextT = rand(1800, 3000);                                     // danach erst wieder in 30–50 Minuten
       const cand = peds.map((p, i) => [p, i]).filter(([p]) => { const d = p.root.position.distanceTo(headWorld); return p.alive && d > 40 && d < 260; });
       if (cand.length) { const [, i] = pick(cand); setVillain(i); share('vil', { i }); }
     }
@@ -3460,7 +3419,7 @@ function myState() {
     // Ort, Lage, Federung und Tempo – damit die anderen dein Auto flüssig und mit Stoßdämpfern sehen
     const so = c.susOut || [0, 0, 0];
     st.c = [r2(gp.x), r2(gp.y), r2(gp.z), r3(c.heading), vehicle.id, r3(-(c.slS || 0)), r3(vehicle.type === 'scooter' ? c.lean || 0 : c.sdS || 0), r3(so[0]), r3(so[1]), r3(so[2]),
-      r2(Math.sin(c.heading) * c.speed + Math.cos(c.heading) * (c.vl || 0)), r2(Math.cos(c.heading) * c.speed - Math.sin(c.heading) * (c.vl || 0)), r3(c.yawRate || 0), r2(c.slip || 0)];   // Tempo inkl. Seitwärts-Rutschen + Reifenrauch
+      r2(Math.sin(c.heading) * c.speed), r2(Math.cos(c.heading) * c.speed), r3(c.yawRate || 0)];
   } else st.pk = [r2(gp.x), r2(gp.y), r2(gp.z), r3(c.heading), vehicle.id];   // geparktes Auto sehen die anderen auch
   if (c.doors.some(d => d.a > .01)) st.da = c.doors.map(d => r2(d.a));
   if (player.ride) st.rd = [player.ride.id, player.ride.seat];
@@ -3647,9 +3606,8 @@ function updRemoteCar(p, dt) {
   if (p.cmCh) { const f = player.ride?.id === p.id ? .35 : 1; p.cmCh.rotation.x = k[6] * f; p.cmCh.rotation.z = k[7] * f; p.cmCh.position.y = k[8] * f; }
   // Räder drehen sich mit dem Tempo
   for (const w of p.cmWheels) { const sp = w.children[0]; if (sp) sp.rotation.x += k[9] / .34 * dt; }
-  // Motor von draußen hören + Reifenrauch beim Driften
+  // Motor von draußen hören
   remoteEngine(p, k, !!s.c);
-  if (s.c && (s.c[13] || 0) > 2.2) tireSmoke(cm, p.cmWheels.filter(w => !w.userData.front).map(w => V(w.position.x, .12, w.position.z)), s.c[13], dt, s.c[10] || 0, s.c[11] || 0);
   // Türen: wie beim Besitzer offen, bzw. kurz auf und zu, wenn jemand ein-/aussteigt
   for (let i = 0; i < p.cmDoors.length; i++) {
     const pv = p.cmDoors[i]; if (!pv) continue;
@@ -4349,7 +4307,7 @@ function frame() {
     if (!seated()) vigTarget = 0;
   } else vignette.visible = false;
   mark('cull');
-  fireBig.update(dt, 1.2); fireSmall.update(dt, .5); smoke.update(dt, .3); tireSmokePS.update(dt, .25); updDebris(dt); updNpcEngines(dt);
+  fireBig.update(dt, 1.2); fireSmall.update(dt, .5); smoke.update(dt, .3); updDebris(dt); updNpcEngines(dt);
   mark('particles');
   updAlarm(dt); updPhone(dt); updCarPlay(dt); updRainFx(dt);
   mark('phone');
