@@ -1838,6 +1838,9 @@ const fmtShort = d => d >= 950 ? (d / 1000).toFixed(1).replace('.', ',') + ' km'
 SND.chime = mkBuf(1, t => (Math.sin(2 * Math.PI * 784 * t) * (t < .2 ? Math.exp(-t * 6) : 0) + (t >= .17 ? Math.sin(2 * Math.PI * 1175 * t) * Math.exp(-(t - .17) * 4.5) : 0)) * .45);
 SND.arrive = mkBuf(1.5, t => [523, 659, 784].reduce((s, f, i) => s + (t >= i * .17 ? Math.sin(2 * Math.PI * f * t) * Math.exp(-(t - i * .17) * 3.5) : 0), 0) * .33);
 SND.ding = mkBuf(.6, t => Math.sin(2 * Math.PI * 988 * t) * Math.exp(-t * 6) * .3);
+SND.recalc = mkBuf(.7, t => (Math.sin(2 * Math.PI * 740 * t) * (t < .16 ? Math.exp(-t * 14) : 0) + (t >= .14 ? Math.sin(2 * Math.PI * 988 * t) * Math.exp(-(t - .14) * 7) : 0)) * .32);
+// kurzer Ton direkt ins Ohr (nicht im Raum)
+function uiTone(buf) { if (AC.state !== 'running') return; const s = AC.createBufferSource(); s.buffer = buf; s.connect(voiceGain); s.start(); }
 
 const nav = { on: false, n: '', p: null, route: null, end: null, k: 1, said: new Set(), offT: 0, t: 0, info: null };
 const navPos = () => player.inCar ? pcar.group.position : headWorld;
@@ -1853,7 +1856,7 @@ function stopNav() { nav.on = false; nav.route = null; nav.info = null; phone.de
 function planRoute(first) {
   const pos = navPos();
   nav.route = findRoute(pos.x, pos.z, nav.p[0], nav.p[1]); nav.end = nav.route[nav.route.length - 1]; nav.k = 1; nav.said = new Set();
-  speak(first ? 'nav_berechnet' : 'nav_neu', true);
+  if (first) speak('nav_berechnet', true); else if (player.inCar) uiTone(SND.recalc);   // Neuberechnung: nur ein kurzer Ton
   const r = nav.route;
   if (player.inCar && r.length > 1) {   // falsche Richtung? -> wenden
     const dx = r[1].x - r[0].x, dz = r[1].z - r[0].z, l = Math.hypot(dx, dz) || 1;
@@ -2403,6 +2406,7 @@ function updPlayerCar(dt) {
   const sp = Math.abs(c.speed), Lh = handBy('left');
   const hbrake = !sc && player.inCar && !c.dead && (xrOn() ? !!(Lh?.gp?.buttons[4]?.pressed || Lh?.now[3]) : !!desk.keys.Space);
   if (hbrake && sp > 5) c.drift = Math.min(1, (c.drift || 0) + dt * 5);
+  else if (!sc && sp > 30 && Math.abs(c.speed * yawRate) > 22) c.drift = Math.min(1, (c.drift || 0) + dt * 1.6);   // ab ~110 km/h hart eingelenkt -> Heck kommt
   else c.drift = Math.max(0, (c.drift || 0) - dt * (Math.abs(c.vl || 0) < 1.5 ? 3 : .5));   // fängt sich, wenn das Rutschen nachlässt
   if (!sc && sp > 3) { const cap = c.drift > .2 ? 2.4 : 10 / sp; yawRate = clamp(yawRate * (1 + .9 * c.drift), -cap, cap); }   // normal: max. ~1 g Querbeschleunigung
   if (hbrake && !inAir) c.speed -= Math.sign(c.speed) * Math.min(sp, 3.5 * dt);   // Hinterräder blockieren
@@ -2811,7 +2815,9 @@ renderer.xr.addEventListener('sessionstart', () => {
   // Quest: etwas kleinere Schattenkarte für flüssige 72 FPS
   sunLight.shadow.mapSize.set(1024, 1024); sunLight.shadow.map?.dispose(); sunLight.shadow.map = null;
   Object.assign(sunLight.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40 }); sunLight.shadow.camera.updateProjectionMatrix();
+  renderer.toneMappingExposure = 1.35;   // die Brille zeigt dunkler als ein Monitor -> heller belichten
   startEl.style.display = 'none'; startOnline(); startIntro(); AC.resume(); camera.rotation.set(0, 0, 0); TOOLS.forEach(t => { if (!t.heldBy) holster(t); }); if (phone.where === 'hand') setPhone('hand'); msg('Willkommen in Stuttgart! A = Handy · Grip = greifen', 5); });
+renderer.xr.addEventListener('sessionend', () => { renderer.toneMappingExposure = 1.0; });
 addEventListener('keydown', e => {
   desk.keys[e.code] = true; if (xrOn()) return;
   if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
@@ -2920,7 +2926,7 @@ let vigTarget = 0;
 // Wetter: manchmal Regen – nasse, spiegelnde Straßen (vom Host für alle gleich)
 // ===================================================================
 const weather = { k: 0, target: 0, t: 90 };
-let sunBase = 2.6, fogBase = scene.fog.color.clone();
+let sunBase = 2.6, hemiBase = .9, fogBase = scene.fog.color.clone();
 const rainFog = new THREE.Color(.42, .45, .5);
 const rain = (() => {
   const n = 2200, pos = new Float32Array(n * 6), g = new THREE.BufferGeometry();
@@ -2939,7 +2945,7 @@ function updWeather(dt) {
   weather.k += (weather.target - weather.k) * Math.min(1, dt * .12);
   const k = weather.k;
   if (!was && k > .5) msg('Es regnet', 2);
-  sunLight.intensity = sunBase * (1 - k * .75); hemi.intensity = (scene.background?.isTexture ? .25 : .9) * (1 + k * .6);
+  sunLight.intensity = sunBase * (1 - k * .75); hemi.intensity = hemiBase * (1 + k * .6);
   scene.backgroundIntensity = 1 - k * .6;
   scene.fog.color.lerpColors(fogBase, rainFog, k); scene.fog.near = 200 - k * 150; scene.fog.far = 1100 - k * 700;
   for (const m of [MAT.road, MAT.inter, MAT.hw, MAT.lot]) { m.roughness = .95 - k * .65; m.envMapIntensity = 1 + k * 1.6; }
@@ -3994,6 +4000,9 @@ function upgradePlayerCar(gltf, id = 'ferrari') {
   };
   mergeIn(ch); mergeIn(ws); doors.forEach(d => mergeIn(d.pivot, true));
   for (const w of Object.values(wheels)) { mergeIn(w.steer); mergeIn(w.spin); }
+  // Innenraum heller: dunkle Materialien bekommen mehr Umgebungslicht vom Himmel (sonst sieht man in VR drinnen kaum etwas)
+  const litM = new Set();
+  vis.traverse(o => { if (!o.isMesh || !o.userData.inner) return; for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && m !== c.bodyMat && m !== c.glassMat && !litM.has(m)) { litM.add(m); m.envMapIntensity = 2.6; } });
   // Infotainment-Display für CarPlay: der Bildschirm in der Mittelkonsole (am weitesten mittig)
   let screen = null;
   ch.traverse(o => { if (o.isMesh && o.userData.screen) { o.geometry.computeBoundingBox(); const ax = Math.abs(o.geometry.boundingBox.getCenter(V()).x); if (!screen || ax < screen.ax) screen = { m: o, ax }; } });
@@ -4246,7 +4255,7 @@ function upgradeSky(hdr) {
   const hor = [0, 0, 0]; let n = 0; const hy = Math.floor(h * .47);
   for (let x = 0; x < w; x += 4) { const i = (hy * w + x) * 4; hor[0] += get(i); hor[1] += get(i + 1); hor[2] += get(i + 2); n++; }
   scene.fog.color.setRGB(hor[0] / n, hor[1] / n, hor[2] / n, THREE.LinearSRGBColorSpace);
-  hemi.intensity = .25; sunLight.intensity = sunBase = 3.2; fogBase.copy(scene.fog.color);
+  hemiBase = .7; hemi.intensity = hemiBase; sunLight.intensity = sunBase = 3.2; fogBase.copy(scene.fog.color);   // mehr Umgebungslicht = weichere, hellere Schatten
   console.log('Himmel geladen, Sonne:', sunDir.toArray().map(v => v.toFixed(2)));
 }
 safe('Himmel', AS.loadHDRI('kloofendal_48d_partly_cloudy_puresky', '2k'), upgradeSky);
@@ -4332,8 +4341,9 @@ function frame() {
   }
   // VR-Komfort-Vignette
   if (xrOn()) {
-    if (player.inCar) vigTarget = Math.min(.55, Math.abs(pcar.speed) / 45 + Math.abs(pcar.spin) * Math.abs(pcar.speed) / 160);
-    if (player.ride) { const rc = net.players.get(player.ride.id)?.st?.c; vigTarget = rc ? Math.min(.5, Math.hypot(rc[10] || 0, rc[11] || 0) / 45 + Math.abs(rc[12] || 0) * .25) : 0; }
+    // Komfort-Rand nur leicht (vorher zu dunkel: im Auto sah man kaum etwas)
+    if (player.inCar) vigTarget = Math.min(.28, Math.abs(pcar.speed) / 90 + Math.abs(pcar.spin) * Math.abs(pcar.speed) / 400);
+    if (player.ride) { const rc = net.players.get(player.ride.id)?.st?.c; vigTarget = rc ? Math.min(.25, Math.hypot(rc[10] || 0, rc[11] || 0) / 90 + Math.abs(rc[12] || 0) * .12) : 0; }
     vignette.material.opacity += (vigTarget - vignette.material.opacity) * Math.min(1, dt * 6);
     vignette.visible = vignette.material.opacity > .01;
     if (!seated()) vigTarget = 0;
