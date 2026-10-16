@@ -1,0 +1,13 @@
+{
+  "name": "stuttgart-vr",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stuttgart VR – Multiplayer-VR-Spiel für Meta Quest (WebXR)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

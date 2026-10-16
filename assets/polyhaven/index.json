@@ -1,0 +1,43 @@
+{
+ "models": {
+  "service_pistol": "assets/polyhaven/service_pistol.glb",
+  "sledgehammer_01": "assets/polyhaven/sledgehammer_01.glb",
+  "vintage_lighter": "assets/polyhaven/vintage_lighter.glb",
+  "wooden_crate_01": "assets/polyhaven/wooden_crate_01.glb",
+  "metal_jerrycan": "assets/polyhaven/metal_jerrycan.glb",
+  "painted_wooden_bench": "assets/polyhaven/painted_wooden_bench.glb",
+  "metal_trash_can": "assets/polyhaven/metal_trash_can.glb",
+  "Barrel_01": "assets/polyhaven/Barrel_01.glb",
+  "old_tyre": "assets/polyhaven/old_tyre.glb",
+  "utility_box_01": "assets/polyhaven/utility_box_01.glb",
+  "trashbag": "assets/polyhaven/trashbag.glb",
+  "modular_urban_apartments_facade": "assets/polyhaven/modular_urban_apartments_facade.glb"
+ },
+ "tex": {
+  "asphalt_02": {
+   "map": "assets/polyhaven/asphalt_02/map.jpg",
+   "normalMap": "assets/polyhaven/asphalt_02/normalMap.jpg"
+  },
+  "concrete_pavers": {
+   "map": "assets/polyhaven/concrete_pavers/map.jpg",
+   "normalMap": "assets/polyhaven/concrete_pavers/normalMap.jpg"
+  },
+  "aerial_grass_rock": {
+   "map": "assets/polyhaven/aerial_grass_rock/map.jpg",
+   "normalMap": "assets/polyhaven/aerial_grass_rock/normalMap.jpg"
+  },
+  "clay_roof_tiles_02": {
+   "map": "assets/polyhaven/clay_roof_tiles_02/map.jpg",
+   "normalMap": "assets/polyhaven/clay_roof_tiles_02/normalMap.jpg"
+  },
+  "sparse_grass": {
+   "map": "assets/polyhaven/sparse_grass/map.jpg",
+   "normalMap": "assets/polyhaven/sparse_grass/normalMap.jpg"
+  }
+ },
+ "hdri": {
+  "kloofendal_48d_partly_cloudy_puresky": {
+   "2k": "assets/polyhaven/kloofendal_48d_partly_cloudy_puresky/kloofendal_48d_partly_cloudy_puresky_2k.hdr"
+  }
+ }
+}

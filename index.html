@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stuttgart VR</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#000;font-family:system-ui,sans-serif}
+  #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;
+    background:linear-gradient(160deg,#1b1f2a,#3a0f3a);color:#fff;text-align:center;z-index:10;padding:16px}
+  #start h1{margin:0;font-size:42px}
+  #start p{max-width:640px;opacity:.85;line-height:1.5;margin:0}
+  #start button{font-size:18px;padding:12px 24px;border-radius:10px;border:0;background:#e20074;color:#fff;cursor:pointer}
+  #keys{font-size:13px;opacity:.7}
+  #cross{position:fixed;left:50%;top:50%;width:6px;height:6px;margin:-3px;border-radius:50%;background:#fff;opacity:.7;pointer-events:none}
+</style>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="start">
+  <h1>Stuttgart VR</h1>
+  <p>Meta Quest 3 / 3S: unten auf <b>ENTER VR</b> drücken.<br>
+  Linker Stick = laufen · Grip = greifen · A = Handy / Einsteigen · B = Aussteigen ·
+  Rechter Trigger = Gas / Schießen · Linker Trigger = Bremse</p>
+  <input id="name" maxlength="16" placeholder="Dein Spielername" style="font-size:18px;padding:10px 14px;border-radius:10px;border:0;text-align:center">
+  <p id="online" style="opacity:.8">Mikrofon wird beim Start abgefragt (Sprach-Chat &amp; Anrufe)</p>
+  <p id="load">3D-Modelle werden geladen …</p>
+  <button id="desk">Am PC testen</button>
+  <p id="keys">Quest: am PC <b>node server.js</b> starten, dann im Quest-Browser die angezeigte <b>https://…:8443</b>-Adresse öffnen
+  (Warnung → „Erweitert“ → „Weiter“).<br>PC: WASD laufen · Maus schauen · 1 Hammer · 2 Pistole · 3 Feuerzeug · Klick benutzen ·
+  F Auto ein/aus · P Handy · H Handy in Halterung · C Testanruf</p>
+</div>
+<div id="cross"></div>
+<script type="module" src="game.js"></script>
+</body>
+</html>

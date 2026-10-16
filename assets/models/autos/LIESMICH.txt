@@ -1,0 +1,4 @@
+﻿Hier eigene Auto-Modelle als .glb ablegen (z.B. bmw.glb, urus.glb, taigo.glb, polo.glb, van.glb).
+Der Dateiname wird zum Namen in der Garage-App. bmw.glb wird automatisch dein Standard-Auto.
+Tipp: Modelle unter ca. 300.000 Dreiecken nehmen, sonst ruckelt es auf der Quest.
+Lizenz beachten (z.B. CC-BY: Ersteller nennen).
