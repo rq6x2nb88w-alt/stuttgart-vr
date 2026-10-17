@@ -764,7 +764,9 @@ pcar.fl.explodeAfter = 12;
 pcar.locked = true;   // anfangs abgeschlossen: niemand kann einsteigen (am Hauptdisplay entsperren)
 // Aktuelles eigenes Fahrzeug (wird in der Garage-App gewechselt)
 let vehicle = { id: 'ferrari', name: 'Ferrari 458', type: 'car' };
-const vehicleCache = {};
+const vehicleCache = {}, vehicleFar = {};
+const lowTrimMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: .4, roughness: .5 });
+let carBoot = false;   // eigenes Auto fertig geladen (vorher nichts senden, sonst sehen andere kurz ein falsches Auto)
 // Sitzplätze je Fahrzeug (Fahrer, Beifahrer, hinten …) – damit andere Spieler mitfahren können
 const vehicleMeta = { scooter: { seats: [V(0, 1.6, -.05)], half: V(.3, 1.2, .5), paint: 0x15171a } };
 const DEFAULT_META = { seats: [V(.37, 1.12, -.1), V(-.37, 1.12, -.1), V(.36, 1.12, -.95), V(-.36, 1.12, -.95)], half: V(.92, 1.45, 2.3), paint: 0x8a1010 };
@@ -833,14 +835,23 @@ const innerVis = (root, on) => flagVis(root, 'inner', on);
 function remoteVehicleMesh(type) {
   if (type === 'scooter') return vehicleCache.scooter ? vehicleCache.scooter.clone(true) : buildScooter();
   if (vehicleCache[type]) {
-    // weit weg reicht das einfache Auto (spart auf der Quest viele Dreiecke)
-    const full = vehicleCache[type].clone(true); if (!npcCarGeo) return full;
+    // weit weg reicht eine vereinfachte Kopie desselben Autos (spart auf der Quest viele Dreiecke)
+    const full = vehicleCache[type].clone(true), low = vehicleFar[type]; if (!low) return full;
     const lod = new THREE.LOD(); lod.addLevel(full, 0);
-    lod.addLevel(new THREE.Mesh(npcCarGeo.near, [M(metaOf(type).paint, { metalness: .6, roughness: .3 }), npcCarGeo.trim, M(0x141b22, { metalness: .9, roughness: .05 })]), 45);
+    lod.addLevel(new THREE.Mesh(low, [M(metaOf(type).paint, { metalness: .6, roughness: .3 }), lowTrimMat, M(0x141b22, { metalness: .9, roughness: .05 })]), 45);
     return lod;
   }
   const paint = M(0x8a1010, { metalness: .7, roughness: .3 });
   return npcCarGeo ? new THREE.Mesh(npcCarGeo.near, [paint, npcCarGeo.trim, M(0x141b22, { metalness: .9, roughness: .05 })]) : new THREE.Mesh(BODY_GEO, paint);
+}
+// Auto eines anderen Spielers, das du selbst nicht geladen hast (z.B. er fährt Ferrari, du Jetta): einmal nachladen, nur zum Anzeigen
+const remoteLoads = {};
+function needRemoteModel(type) {
+  if (vehicleCache[type] || remoteLoads[type] || !carBoot) return;
+  const v = VEHICLES.find(q => q.id === type); if (!v || v.type !== 'car') return;
+  remoteLoads[type] = true;
+  (v.file ? AS.loadUrl(v.file) : AS.loadCar()).then(g => { if (!vehicleCache[type]) upgradePlayerCar(g, type, false); })
+    .catch(e => console.warn('Auto für andere Spieler konnte nicht geladen werden:', type, e));
 }
 
 // NPC-Autos im Stadtraster
@@ -2774,9 +2785,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   // Quest: etwas kleinere Schattenkarte für flüssige 72 FPS
   sunLight.shadow.mapSize.set(1024, 1024); sunLight.shadow.map?.dispose(); sunLight.shadow.map = null;
   Object.assign(sunLight.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40 }); sunLight.shadow.camera.updateProjectionMatrix();
-  renderer.toneMappingExposure = 1.35;   // die Brille zeigt dunkler als ein Monitor -> heller belichten
   startEl.style.display = 'none'; startOnline(); startIntro(); AC.resume(); camera.rotation.set(0, 0, 0); TOOLS.forEach(t => { if (!t.heldBy) holster(t); }); if (phone.where === 'hand') setPhone('hand'); msg('Willkommen in Stuttgart! A = Handy · Grip = greifen', 5); });
-renderer.xr.addEventListener('sessionend', () => { renderer.toneMappingExposure = 1.0; });
 addEventListener('keydown', e => {
   desk.keys[e.code] = true; if (xrOn()) return;
   if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
@@ -2904,8 +2913,12 @@ function updWeather(dt) {
   weather.k += (weather.target - weather.k) * Math.min(1, dt * .12);
   const k = weather.k;
   if (!was && k > .5) msg('Es regnet', 2);
-  sunLight.intensity = sunBase * (1 - k * .75); hemi.intensity = hemiBase * (1 + k * .6);
-  scene.backgroundIntensity = 1 - k * .6;
+  // In der Brille: heller belichten und mehr Umgebungslicht (weiche Schatten) – die Quest zeigt dunkler als ein Monitor.
+  // Regen macht es nur etwas trüber, nicht dunkel.
+  const vr = xrOn();
+  sunLight.intensity = sunBase * (vr ? .8 : 1) * (1 - k * .4); hemi.intensity = hemiBase * (vr ? 1.6 : 1) * (1 + k * .5);
+  renderer.toneMappingExposure = (vr ? 1.6 : 1) + k * .15;
+  scene.backgroundIntensity = 1 - k * .3;
   scene.fog.color.lerpColors(fogBase, rainFog, k); scene.fog.near = 200 - k * 150; scene.fog.far = 1100 - k * 700;
   for (const m of [MAT.road, MAT.inter, MAT.hw, MAT.lot]) { m.roughness = .95 - k * .65; m.envMapIntensity = 1 + k * 1.6; }
   MAT.walk.roughness = .95 - k * .5;
@@ -3420,7 +3433,7 @@ function myState() {
     const so = c.susOut || [0, 0, 0];
     st.c = [r2(gp.x), r2(gp.y), r2(gp.z), r3(c.heading), vehicle.id, r3(-(c.slS || 0)), r3(vehicle.type === 'scooter' ? c.lean || 0 : c.sdS || 0), r3(so[0]), r3(so[1]), r3(so[2]),
       r2(Math.sin(c.heading) * c.speed), r2(Math.cos(c.heading) * c.speed), r3(c.yawRate || 0)];
-  } else st.pk = [r2(gp.x), r2(gp.y), r2(gp.z), r3(c.heading), vehicle.id];   // geparktes Auto sehen die anderen auch
+  } else if (carBoot) st.pk = [r2(gp.x), r2(gp.y), r2(gp.z), r3(c.heading), vehicle.id];   // geparktes Auto sehen die anderen auch
   if (c.doors.some(d => d.a > .01)) st.da = c.doors.map(d => r2(d.a));
   if (player.ride) st.rd = [player.ride.id, player.ride.seat];
   st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
@@ -3582,9 +3595,12 @@ function updRemoteCar(p, dt) {
   const s = p.st, c = s && (s.c || s.pk);
   if (!c) { if (p.carMesh) p.carMesh.visible = false; p.car = null; return; }
   const type = c[4] || 'ferrari';
-  if (!p.carMesh || p.carType !== type) {
+  // echtes Modell da? Sonst nachladen und das Ersatz-Auto ersetzen, sobald es fertig ist (vorher blieb es ein Klotz)
+  const q = type === 'scooter' || vehicleCache[type] ? 2 : 0;
+  if (!q) needRemoteModel(type);
+  if (!p.carMesh || p.carType !== type || p.carQ < q) {
     if (p.carMesh) scene.remove(p.carMesh);
-    const cm = p.carMesh = remoteVehicleMesh(type); p.carType = type; scene.add(cm); cm.visible = false;
+    const cm = p.carMesh = remoteVehicleMesh(type); p.carType = type; p.carQ = q; scene.add(cm); cm.visible = false;
     p.cmCh = cm.getObjectByName('chassis'); p.cmWheels = []; p.cmDoors = []; p.cmScreens = [];
     cm.traverse(o => { if (o.name === 'wheel') p.cmWheels.push(o); if (/^door\d$/.test(o.name)) p.cmDoors[+o.name[4]] = o; if (o.isMesh && o.userData.screen) p.cmScreens.push({ m: o, orig: o.material }); });
     p.cmHandles = p.cmDoors.map(pv => pv?.getObjectByName('handle') || null);   // echte Türgriffe zum Einsteigen
@@ -3774,8 +3790,9 @@ function carClone(vis) {
   return out;
 }
 
-function upgradePlayerCar(gltf, id = 'ferrari') {
-  const c = pcar, parts = AS.flatten(gltf.scene);
+// own = false: nur das Modell für andere Spieler bauen (dein eigenes Auto bleibt unverändert)
+function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
+  const c = own ? pcar : { fl: { mats: [], orig: [] } }, parts = AS.flatten(gltf.scene);
   const bb = orientCar(parts, true), halfW = bb.max.x, top = bb.max.y;
   const triCount = gg => (gg.index ? gg.index.count : gg.attributes.position.count) / 3;
   const hasTex = m => m.map || m.normalMap || m.roughnessMap || m.metalnessMap || m.aoMap || m.emissiveMap;
@@ -3789,7 +3806,8 @@ function upgradePlayerCar(gltf, id = 'ferrari') {
   for (const p of parts) { t0 += triCount(p.geo); p.dec = triCount(p.geo) > 4000 && !hasTex(p.mat) && !isBody(p); }
   const simp = (gg, p) => { if (!p.dec) return gg; const d = AS.decimate(gg, .006); return d.index.count ? d : gg; };
   // Schatten wirft nur eine grobe Kopie (~5.000 Dreiecke)
-  const shadowGeo = mergeGeometries(parts.map(p => AS.decimate(p.geo, .09)).filter(gg => gg.index.count));
+  const low = parts.map(p => ({ p, g: AS.decimate(p.geo, .09) })).filter(e => e.g.index.count);
+  const shadowGeo = mergeGeometries(low.map(e => e.g));
   const steer = parts.filter(p => STEER_RE.test(p.name) && !/column/i.test(p.name));
   const sc = steer.length ? partBox(steer).getCenter(V()) : V(.37, top * .66, .4);
   const DX = Math.sign(sc.x) || 1;                                   // Fahrerseite (+1 = links)
@@ -3979,7 +3997,22 @@ function upgradePlayerCar(gltf, id = 'ferrari') {
   c.clusterUV = c.cluster ? uvBounds(c.cluster) : null; c.clusterOrig = c.cluster ? c.cluster.material : null;
   vehicleMeta[id] = { seats, half: V(halfW, top, bb.max.z), paint: c.bodyMat.color.getHex() };
   vehicleCache[id] = carClone(vis);
-  buildRainFx(c, wsGeo, ch, eye);                                     // Regentropfen + Scheibenwischer (nur am eigenen Auto)
+  // dasselbe Auto grob vereinfacht, für andere Spieler aus der Ferne: Lack | Teile mit ihrer Farbe | Glas
+  {
+    const cats = [[], [], []], col = new THREE.Color();
+    for (const { p, g } of low) {
+      if (STEER_RE.test(p.name)) continue;
+      const k = isBody(p) ? 0 : isGlass(p) ? 2 : 1, gg = g.clone();
+      col.set(k !== 1 ? 0xffffff : p.mat.map || !p.mat.color ? 0x2a2a2a : p.mat.color);
+      const n = gg.attributes.position.count, ca = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) col.toArray(ca, i * 3);
+      gg.setAttribute('color', new THREE.BufferAttribute(ca, 3)); cats[k].push(gg);
+    }
+    const empty = () => { const gg = new THREE.BufferGeometry(); for (const [n, s] of [['position', 3], ['normal', 3], ['color', 3]]) gg.setAttribute(n, new THREE.BufferAttribute(new Float32Array(0), s)); gg.setIndex([]); return gg; };
+    vehicleFar[id] = mergeGeometries(cats.map(l => l.length ? mergeGeometries(l) : empty()), true);
+  }
+  if (!own) { console.log('Auto für andere Spieler geladen:', id); return; }
+  buildRainFx(c, wsGeo, ch, eye);                                    // Regentropfen + Scheibenwischer (nur am eigenen Auto)
   c.group.remove(c.vis); c.vis = vis; c.chassis = ch; c.group.add(vis);
   const dz = drv.box.getCenter(V()).z;
   Object.assign(c, {
@@ -4223,12 +4256,14 @@ safe('Pistole', AS.loadPoly('service_pistol'), g => upgradeTools('service_pistol
 safe('Vorschlaghammer', AS.loadPoly('sledgehammer_01'), g => upgradeTools('sledgehammer_01', g));
 safe('Feuerzeug', AS.loadPoly('vintage_lighter'), g => upgradeTools('vintage_lighter', g));
 // Eigene Autos aus assets/models/autos/*.glb (z.B. bmw.glb, urus.glb, taigo.glb, polo.glb, van.glb)
-safe('Auto', AS.listDir('assets/models/autos/').then(async files => {
+const carBootP = AS.listDir('assets/models/autos/').then(async files => {
   for (const f of files) { const id = f.replace(/\.(glb|gltf)$/i, '').toLowerCase(); if (!VEHICLES.find(v => v.id === id)) VEHICLES.push({ id, name: NICE_NAMES[id] || f.replace(/\.(glb|gltf)$/i, ''), type: 'car', file: 'assets/models/autos/' + f }); }
   const def = VEHICLES.find(v => v.id === 'bmw') || VEHICLES.find(v => v.file);
   if (def) { try { upgradePlayerCar(await AS.loadUrl(def.file), def.id); vehicle = def; return; } catch (e) { console.warn(e); } }
   upgradePlayerCar(await AS.loadCar(), 'ferrari');
-}), () => AS.loadNpcCar().then(upgradeNpcCars));
+});
+carBootP.catch(() => { }).finally(() => { carBoot = true; });
+safe('Auto', carBootP, () => AS.loadNpcCar().then(upgradeNpcCars));
 safe('Menschen', Promise.all([AS.loadHuman(), AS.loadHuman2().catch(() => null)]), ([a, b]) => upgradePeds(a, b));
 for (const [type, D] of Object.entries(PROP_DEF)) safe(D.model, AS.loadPoly(D.model), g => upgradeProps(type, g));
 safe('Fassaden', AS.loadPoly('modular_urban_apartments_facade'), upgradeFacades);
