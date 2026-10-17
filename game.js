@@ -2893,6 +2893,19 @@ let vigTarget = 0;
 // ===================================================================
 // Wetter: manchmal Regen – nasse, spiegelnde Straßen (vom Host für alle gleich)
 // ===================================================================
+// Innenraum-Aufhellung: das fast schwarze Cockpit leuchtet leicht in seiner eigenen Farbe/Textur (Details bleiben erhalten),
+// damit man in der Brille im Auto etwas sieht – kostet fast nichts (keine zusätzliche Lampe)
+const cabinLift = { value: 0 }, lifted = new WeakSet();
+let CABIN_LIFT_VR = .9;
+function liftMat(m) {
+  if (!m.isMeshStandardMaterial || lifted.has(m)) return; lifted.add(m);
+  m.onBeforeCompile = sh => {
+    sh.uniforms.cabinLift = cabinLift;
+    sh.fragmentShader = 'uniform float cabinLift;\n' + sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * cabinLift;');
+  };
+  m.customProgramCacheKey = () => 'cabinLift';
+  m.needsUpdate = true;
+}
 const weather = { k: 0, target: 0, t: 900 };   // 15 Minuten trocken, 15 Minuten Regen, immer im Wechsel
 let sunBase = 2.6, hemiBase = .9, fogBase = scene.fog.color.clone();
 const rainFog = new THREE.Color(.42, .45, .5);
@@ -2913,11 +2926,12 @@ function updWeather(dt) {
   weather.k += (weather.target - weather.k) * Math.min(1, dt * .12);
   const k = weather.k;
   if (!was && k > .5) msg('Es regnet', 2);
-  // In der Brille: heller belichten und mehr Umgebungslicht (weiche Schatten) – die Quest zeigt dunkler als ein Monitor.
+  // In der Brille: deutlich heller belichten und viel mehr Umgebungslicht (helle, weiche Schatten) – die Quest zeigt dunkler als ein Monitor.
   // Regen macht es nur etwas trüber, nicht dunkel.
   const vr = xrOn();
-  sunLight.intensity = sunBase * (vr ? .8 : 1) * (1 - k * .4); hemi.intensity = hemiBase * (vr ? 1.6 : 1) * (1 + k * .5);
-  renderer.toneMappingExposure = (vr ? 1.6 : 1) + k * .15;
+  sunLight.intensity = sunBase * (vr ? .75 : 1) * (1 - k * .4); hemi.intensity = hemiBase * (vr ? 2.4 : 1) * (1 + k * .5);
+  renderer.toneMappingExposure = (vr ? 1.85 : 1) + k * .15;
+  cabinLift.value = vr ? CABIN_LIFT_VR : .12;
   scene.backgroundIntensity = 1 - k * .3;
   scene.fog.color.lerpColors(fogBase, rainFog, k); scene.fog.near = 200 - k * 150; scene.fog.far = 1100 - k * 700;
   for (const m of [MAT.road, MAT.inter, MAT.hw, MAT.lot]) { m.roughness = .95 - k * .65; m.envMapIntensity = 1 + k * 1.6; }
@@ -3978,7 +3992,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   for (const w of Object.values(wheels)) { mergeIn(w.steer); mergeIn(w.spin); }
   // Innenraum heller: dunkle Materialien bekommen mehr Umgebungslicht vom Himmel (sonst sieht man in VR drinnen kaum etwas)
   const litM = new Set();
-  vis.traverse(o => { if (!o.isMesh || !o.userData.inner) return; for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && m !== c.bodyMat && m !== c.glassMat && !litM.has(m)) { litM.add(m); m.envMapIntensity = 2.6; } });
+  vis.traverse(o => { if (!o.isMesh || !o.userData.inner) return; for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && m !== c.bodyMat && m !== c.glassMat && !litM.has(m)) { litM.add(m); m.envMapIntensity = 2.6; liftMat(m); } });
   // Infotainment-Display für CarPlay: der Bildschirm in der Mittelkonsole (am weitesten mittig)
   let screen = null;
   ch.traverse(o => { if (o.isMesh && o.userData.screen) { o.geometry.computeBoundingBox(); const ax = Math.abs(o.geometry.boundingBox.getCenter(V()).x); if (!screen || ax < screen.ax) screen = { m: o, ax }; } });
@@ -3997,6 +4011,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   c.clusterUV = c.cluster ? uvBounds(c.cluster) : null; c.clusterOrig = c.cluster ? c.cluster.material : null;
   vehicleMeta[id] = { seats, half: V(halfW, top, bb.max.z), paint: c.bodyMat.color.getHex() };
   vehicleCache[id] = carClone(vis);
+  vehicleCache[id].traverse(o => { if (o.isMesh && o.userData.inner) [].concat(o.material).forEach(liftMat); });   // Mitfahrer sehen auch etwas
   // dasselbe Auto grob vereinfacht, für andere Spieler aus der Ferne: Lack | Teile mit ihrer Farbe | Glas
   {
     const cats = [[], [], []], col = new THREE.Color();
@@ -4369,4 +4384,4 @@ function frame() {
   renderPhoneCam();
   mark('phoneCam');
 }
-window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert };
+window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift };
