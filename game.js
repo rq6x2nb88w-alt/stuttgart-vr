@@ -157,7 +157,7 @@ const N = 7, P = 86, ROAD = 16, BLOCK = 70, HALF = N * P / 2, LANE = 3.5;
 const R = [...Array(N + 1)].map((_, i) => -HALF + i * P);
 const bc = i => R[i] + P / 2;
 const HZ = HALF + 70;
-const colliders = [], flammables = [], shootables = [], props = [], blocks = [], facadeSpecs = [], shopSpots = [];
+const colliders = [], flammables = [], shootables = [], props = [], blocks = [], facadeSpecs = [], shopSpots = [], enterSpecs = [];
 const culls = []; // Objekte, die erst in der Nähe sichtbar werden (Leistung auf der Quest)
 const cull = (o, r) => { culls.push({ o, r, p: o.getWorldPosition ? o.getWorldPosition(new THREE.Vector3()) : o.position.clone() }); return o; };
 const M = (c, o = {}) => new THREE.MeshStandardMaterial({ color: c, roughness: .8, ...o });
@@ -273,10 +273,12 @@ function building(x, z, w, d, h, style, wall, opt = {}) {
   const m = new THREE.Mesh(BOX, [mx, mx, roof, roof, mz, mz]);
   m.scale.set(w, h, d); m.position.set(x, h / 2, z); scene.add(m);
   const ent = { kind: 'building', mesh: m }; m.userData.ent = ent; shootables.push(m);
-  colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+  // begehbar (Schule, Supermarkt, Tankstellen-Shop): statt eines Klotzes Wände mit Tür – Innenraum kommt in buildInteriors()
+  if (opt.enter) enterSpecs.push({ ent, x, z, w, d, h, kind: opt.enter, front: opt.front || [0, 1], kit, mx, mz, roof, wall });
+  else colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
   ent.fl = addFlammable({ kind: 'building', box: new THREE.Box3(new THREE.Vector3(x - w / 2, 0, z - d / 2), new THREE.Vector3(x + w / 2, h, z + d / 2)), mats: [mx, mz, roof], duration: rand(120, 200) });
   if (h > 20) for (let i = 0; i < 2; i++) box(rand(2, 4), 1.6, rand(2, 3), M(0x8a8d90), x + rand(-w / 3, w / 3), h + 0.8, z + rand(-d / 3, d / 3));
-  if (kit) facadeSpecs.push({ ent, x, z, w, d, h, F, house: !!opt.house, shops: !!opt.shops, tint: new THREE.Color(opt.tint || wall), front: opt.front || [0, 1] });
+  if (kit) facadeSpecs.push({ ent, x, z, w, d, h, F, house: !!opt.house, shops: !!opt.shops, tint: new THREE.Color(opt.tint || wall), front: opt.front || [0, 1], door: !!opt.enter });
   return ent;
 }
 const ROOF_GEO = new THREE.ConeGeometry(1, 1, 4).rotateY(Math.PI / 4);
@@ -480,6 +482,8 @@ function updLights(dt) {
     box(17, .6, 17, concT, TVT.x, by + 151, TVT.z).rotation.y = .4;
     for (let i = 0; i < 8; i++) { const seg = new THREE.Mesh(new THREE.CylinderGeometry(.7 - i * .06, .75 - i * .06, 8, 12), M(i % 2 ? 0xffffff : 0xc81e1e)); seg.position.set(TVT.x, by + 155 + i * 8, TVT.z); scene.add(seg); }
     colliders.push({ minX: TVT.x - 5.5, maxX: TVT.x + 5.5, minZ: TVT.z - 5.5, maxZ: TVT.z + 5.5 });
+    // kann angezündet werden (Feuerzeug unten am Turm): das Feuer frisst sich langsam nach oben
+    addFlammable({ kind: 'building', tower: true, box: new THREE.Box3(new THREE.Vector3(TVT.x - 5.8, by, TVT.z - 5.8), new THREE.Vector3(TVT.x + 5.8, by + 158, TVT.z + 5.8)), mats: [concT], duration: 480 });
     sign(['FERNSEHTURM', 'STUTTGART'], 6, 2.2, TVT.x, by + 4, TVT.z + 5.8, 0, '#1d1d1d', '#ffffff', 'bold 60px system-ui', 512, 190);
     // Parkplatz oben
     const lot = new THREE.Mesh(new THREE.CircleGeometry(40, 32).rotateX(-Math.PI / 2), MAT.lot); lot.position.set(TVT.x, by + .08, TVT.z); scene.add(lot);
@@ -539,7 +543,7 @@ for (let bx = 0; bx < N; bx++) for (let bz = 0; bz < N; bz++) {
       tree(x + 7, z + 7, rand(.7, 1.1));
     }
   } else if (type === 'school') {
-    building(cx, cz - 20, 54, 12, 12, 'apt', '#f0c896', { front: [0, 1] });
+    building(cx, cz - 20, 54, 12, 12, 'apt', '#f0c896', { front: [0, 1], enter: 'school' });
     building(cx - 22, cz + 2, 12, 30, 12, 'apt', '#f0c896');
     building(cx + 22, cz + 2, 12, 30, 9, 'apt', '#e6ecef');
     sign(['Grundschule', 'am Hasenberg'], 10, 2.5, cx, 10.5, cz - 13.8, 0, '#244a7a', '#fff', 'bold 56px system-ui', 512, 128);
@@ -549,7 +553,7 @@ for (let bx = 0; bx < N; bx++) for (let bz = 0; bz < N; bz++) {
     for (const s of [-1, 1]) { const gm = M(0xffffff); box(.1, 2, .1, gm, cx + s * 14.5, 1, cz + 12.5); box(.1, 2, .1, gm, cx + s * 14.5, 1, cz + 15.5); box(.1, .1, 3, gm, cx + s * 14.5, 2, cz + 14); }
     POI.Schule = [cx, cz];
   } else if (type === 'market') {
-    building(cx + 8, cz - 10, 44, 30, 7, 'shop', '#d9d9d9');
+    building(cx + 8, cz - 10, 44, 30, 7, 'shop', '#d9d9d9', { front: [0, 1], enter: 'market' });
     sign(['SUPERMARKT'], 14, 2.2, cx + 8, 5.8, cz + 5.1, 0, '#c8102e', '#fff', 'bold 80px system-ui');
     for (let i = 0; i < 6; i++) prop('crate', cx - 18 + i * .9, 0, cz - 26);
     prop('bin', cx - 25, 0, cz - 20); prop('bag', cx - 23.5, 0, cz - 21);
@@ -578,6 +582,192 @@ for (let bx = 0; bx < N; bx++) for (let bz = 0; bz < N; bz++) {
   walkTex.repeat.set(BLOCK / 4, BLOCK / 4);
   scene.add(new THREE.Mesh(mergeGeometries(walkGeos), MAT.walk));
 }
+// Bodenhöhe inkl. Gehwege: die Blöcke liegen 15 cm höher (Bordstein) – Räder und Füße stehen darauf statt darin zu versinken
+function surfaceAt(x, z) {
+  const g = groundAt(x, z), i = Math.floor((x + HALF) / P), j = Math.floor((z + HALF) / P);
+  if (i < 0 || j < 0 || i >= N || j >= N) return g;
+  const b = blocks[i * N + j];
+  if (!b || Math.abs(x - b.cx) > BLOCK / 2 || Math.abs(z - b.cz) > BLOCK / 2) return g;
+  return g + (b.type === 'tank' ? .02 : .15);
+}
+// ===================================================================
+// Begehbare Gebäude: Schule, Supermarkt, Tankstellen-Shop – echte Tür (automatische Schiebetür), Innenraum, Einrichtung
+// ===================================================================
+const interiors = [], slideDoors = [];
+// Material, das wie von Deckenlampen beleuchtet aussieht (leuchtet leicht in der eigenen Farbe – keine echte Lampe nötig)
+function roomMat(o = {}, lift = .42) {
+  const m = new THREE.MeshStandardMaterial({ roughness: .85, ...o });
+  m.onBeforeCompile = sh => { sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n\ttotalEmissiveRadiance += diffuseColor.rgb * ' + lift.toFixed(2) + ';'); };
+  m.customProgramCacheKey = () => 'room' + lift.toFixed(2);
+  return m;
+}
+const ITEX = (() => {
+  const tiles = (() => { const [c, g] = C(256, 256); for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { g.fillStyle = '#bdb8ae'; g.fillRect(i * 64, j * 64, 64, 64); g.fillStyle = (i + j) % 2 ? '#e4e1da' : '#d6d2ca'; g.fillRect(i * 64 + 1, j * 64 + 1, 62, 62); } return T(c); })();
+  const lino = (() => { const [c, g] = C(256, 256); g.fillStyle = '#b89d74'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 16; i++) { g.fillStyle = `rgba(${90 + rand(0, 40)},${60 + rand(0, 30)},${30 + rand(0, 20)},.2)`; g.fillRect(0, i * 16, 256, 15); } return T(c); })();
+  const goods = (() => {                                              // Regalware: Reihen bunter Packungen
+    const [c, g] = C(512, 256); g.fillStyle = '#e8e8e8'; g.fillRect(0, 0, 512, 256);
+    for (let row = 0; row < 4; row++) {
+      const y0 = row * 64; g.fillStyle = '#8f969c'; g.fillRect(0, y0 + 58, 512, 6);
+      let x = 2; while (x < 508) { const w = rand(14, 34), h = rand(30, 54); g.fillStyle = `hsl(${rand(0, 360)},${rand(40, 85)}%,${rand(35, 60)}%)`; g.fillRect(x, y0 + 58 - h, w - 2, h); g.fillStyle = 'rgba(255,255,255,.7)'; g.fillRect(x + 2, y0 + 58 - h * .6, w - 6, h * .22); x += w; }
+    }
+    return T(c);
+  })();
+  const drinks = (() => {                                             // Kühlschrank: Flaschen hinter Glas
+    const [c, g] = C(512, 256); g.fillStyle = '#dfe9ef'; g.fillRect(0, 0, 512, 256);
+    for (let row = 0; row < 5; row++) { const y0 = row * 51; g.fillStyle = '#b8c4cc'; g.fillRect(0, y0 + 47, 512, 4); for (let x = 3; x < 508; x += 13) { g.fillStyle = `hsl(${pick([0, 30, 120, 200, 45, 280, 15])},70%,${rand(35, 55)}%)`; g.fillRect(x, y0 + 12, 10, 35); g.fillRect(x + 3, y0 + 6, 4, 7); } }
+    g.strokeStyle = '#8899a6'; g.lineWidth = 5; for (let x = 0; x <= 512; x += 128) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 256); g.stroke(); }
+    return T(c);
+  })();
+  const board = lines => { const [c, g] = C(512, 160); g.fillStyle = '#1f4a33'; g.fillRect(0, 0, 512, 160); g.fillStyle = 'rgba(240,240,230,.92)'; g.font = '600 25px system-ui'; g.textBaseline = 'top'; lines.forEach((l, i) => g.fillText(l, 22, 14 + i * 34)); return T(c, false); };
+  const notes = (() => { const [c, g] = C(256, 160); g.fillStyle = '#b8895a'; g.fillRect(0, 0, 256, 160); [['Schulfest Fr.', '#fff59d'], ['AG Fußball', '#b3e5fc'], ['Mensa: Nudeln', '#c8e6c9'], ['Fundsachen', '#ffccbc'], ['Lesewoche!', '#e1bee7']].forEach(([t, col], i) => { const x = 10 + (i % 3) * 82, y = 12 + Math.floor(i / 3) * 74; g.fillStyle = col; g.fillRect(x, y, 74, 62); g.fillStyle = '#c62828'; g.beginPath(); g.arc(x + 37, y + 7, 4, 0, 7); g.fill(); g.fillStyle = '#333'; g.font = '600 12px system-ui'; g.fillText(t, x + 4, y + 32); }); return T(c, false); })();
+  const signs = (() => { const [c, g] = C(512, 256); ['Obst & Gemüse', 'Getränke', 'Backwaren', 'Süßes & Snacks'].forEach((t, i) => { g.fillStyle = ['#2e7d32', '#1565c0', '#a1662f', '#c2185b'][i]; g.fillRect(0, i * 64, 512, 64); g.fillStyle = '#fff'; g.font = 'bold 40px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 256, i * 64 + 33); }); return T(c, false); })();
+  return { tiles, lino, goods, drinks, board, notes, signs };
+})();
+function buildInteriors() {
+  const goodsM = roomMat({ map: ITEX.goods, roughness: .7 }, .45);
+  const drinkM = new THREE.MeshStandardMaterial({ map: ITEX.drinks, emissive: 0xffffff, emissiveMap: ITEX.drinks, emissiveIntensity: .55, roughness: .25 });
+  const glassM = new THREE.MeshStandardMaterial({ color: 0xbfd8e6, metalness: .2, roughness: .05, transparent: true, opacity: .28, side: THREE.DoubleSide });
+  const frameM = M(0x2b2f35, { metalness: .6, roughness: .4 });
+  for (const S of enterSpecs) {
+    // lokales Raster: Eingang zeigt nach +z, Türloch zwischen d0 und d1 (x)
+    const [fx, fz] = S.front, rot = Math.atan2(fx, fz), along = fz !== 0;
+    const HX = (along ? S.w : S.d) / 2, HZ = (along ? S.d : S.w) / 2, TW = .3, ix = HX - TW, iz = HZ - TW;
+    const y0 = surfaceAt(S.x, S.z) + (S.kind === 'shop' ? .06 : .012), H = S.kind === 'school'   // Tankstelle: über dem Asphalt (der wird nach vorne gezogen) ? 2.95 : Math.min(S.h - .35, S.kind === 'market' ? 4.2 : 3.3);
+    let d0, d1;
+    if (S.kit) { const L = 2 * HX, bays = Math.max(1, Math.round(L / 3)), bw = L / bays, i = Math.floor(bays / 2); d0 = -HX + i * bw; d1 = d0 + bw; }   // dort, wo die Fassade die Tür hat
+    else { const DW = S.kind === 'market' ? 2.8 : 2.2; d0 = -DW / 2; d1 = DW / 2; }
+    const DH = S.kit ? 2.7 : 2.5, WALL = S.kind === 'school' ? 0xf2ead8 : 0xf3f1ec;
+    const grp = new THREE.Group(), ext = new THREE.Group();
+    for (const o of [grp, ext]) { o.position.set(S.x, y0, S.z); o.rotation.y = rot; scene.add(o); }
+    const toW = (x, z) => V(x, 0, z).applyAxisAngle(UP, rot).add(V(S.x, 0, S.z));
+    const col = (x0, x1, z0, z1) => { const a = toW(x0, z0), b = toW(x1, z1); colliders.push({ minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) }); };
+    const vc = [], emi = [], tex = new Map(), etex = new Map();
+    const paint = (g, hex) => { const c = new THREE.Color(hex), n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) c.toArray(a, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
+    const bx = (w, h, d, x, y, z, hex, list = vc) => { const g = new THREE.BoxGeometry(w, h, d).translate(x, y, z); g.deleteAttribute('uv'); list.push(paint(g, hex)); };
+    const quad = (pts, uv, hex, list) => {                              // 4 Ecken, von vorne gesehen gegen den Uhrzeigersinn
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flat(), 3)); g.setIndex([0, 1, 2, 0, 2, 3]); g.computeVertexNormals();
+      if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); if (hex !== undefined) paint(g, hex);
+      list.push(g); return g;
+    };
+    const tq = (mat, pts, uv, map = tex) => { if (!map.has(mat)) map.set(mat, []); quad(pts, uv, undefined, map.get(mat)); };
+    const U4 = [0, 0, 1, 0, 1, 1, 0, 1];
+    // ---- Raum: Boden, Decke, Wände (vorne mit Türloch), Laibung ----
+    const rep = S.kind === 'school' ? 2.5 : 1.6;
+    tq(roomMat({ map: S.kind === 'school' ? ITEX.lino : ITEX.tiles, roughness: .55 }, .35), [[-ix, 0, iz], [ix, 0, iz], [ix, 0, -iz], [-ix, 0, -iz]], [0, 0, 2 * ix / rep, 0, 2 * ix / rep, 2 * iz / rep, 0, 2 * iz / rep]);
+    quad([[-ix, H, -iz], [ix, H, -iz], [ix, H, iz], [-ix, H, iz]], null, 0xf7f7f4, vc);
+    quad([[-ix, 0, -iz], [ix, 0, -iz], [ix, H, -iz], [-ix, H, -iz]], null, WALL, vc);
+    quad([[-ix, 0, iz], [-ix, 0, -iz], [-ix, H, -iz], [-ix, H, iz]], null, WALL, vc);
+    quad([[ix, 0, -iz], [ix, 0, iz], [ix, H, iz], [ix, H, -iz]], null, WALL, vc);
+    const front = (xa, xb, ya, yb) => quad([[xb, ya, iz], [xa, ya, iz], [xa, yb, iz], [xb, yb, iz]], null, WALL, vc);
+    front(-ix, d0, 0, H); front(d1, ix, 0, H); front(d0, d1, DH, H);
+    const zo = HZ + .04, JC = 0xcfcac2;
+    quad([[d0, 0, zo], [d0, 0, iz], [d0, DH, iz], [d0, DH, zo]], null, JC, vc);
+    quad([[d1, 0, iz], [d1, 0, zo], [d1, DH, zo], [d1, DH, iz]], null, JC, vc);
+    quad([[d0, DH, iz], [d1, DH, iz], [d1, DH, zo], [d0, DH, zo]], null, JC, vc);
+    col(-HX, d0, iz, HZ); col(d1, HX, iz, HZ); col(-HX, HX, -HZ, -iz); col(-HX, -ix, -HZ, HZ); col(ix, HX, -HZ, HZ);
+    // ---- außen: Laden-Gebäude bekommen eine eigene Hülle mit Türloch (die Kiste wird unsichtbar, bleibt für Treffer) ----
+    if (!S.kit) {
+      const mF = along ? S.mz : S.mx, mS = along ? S.mx : S.mz, h = S.h - y0, zf = HZ + .001, u = x => (x + HX) / (2 * HX);
+      const fq = (xa, xb, ya, yb) => tq(mF, [[xa, ya, zf], [xb, ya, zf], [xb, yb, zf], [xa, yb, zf]], [u(xa), (ya + y0) / S.h, u(xb), (ya + y0) / S.h, u(xb), (yb + y0) / S.h, u(xa), (yb + y0) / S.h], etex);
+      fq(-HX, d0, -y0, h); fq(d1, HX, -y0, h); fq(d0, d1, DH, h);
+      tq(mF, [[HX, -y0, -zf], [-HX, -y0, -zf], [-HX, h, -zf], [HX, h, -zf]], U4, etex);
+      tq(mS, [[-HX - .001, -y0, -HZ], [-HX - .001, -y0, HZ], [-HX - .001, h, HZ], [-HX - .001, h, -HZ]], U4, etex);
+      tq(mS, [[HX + .001, -y0, HZ], [HX + .001, -y0, -HZ], [HX + .001, h, -HZ], [HX + .001, h, HZ]], U4, etex);
+      tq(S.roof, [[-HX, h, HZ], [HX, h, HZ], [HX, h, -HZ], [-HX, h, -HZ]], U4, etex);
+      S.ent.mesh.material = HIDDEN;
+    } else quad([[d0, DH, HZ + .035], [d1, DH, HZ + .035], [d1, 3 - y0, HZ + .035], [d0, 3 - y0, HZ + .035]], null, new THREE.Color(S.wall).getHex(), vc);   // Sturz über der Tür (Fassade)
+    // ---- automatische Schiebetür aus Glas ----
+    const dw = (d1 - d0) / 2, panel = () => {
+      const p = new THREE.Group(), gl = new THREE.Mesh(new THREE.PlaneGeometry(dw - .04, DH - .06), glassM); gl.position.y = DH / 2; p.add(gl);
+      for (const [w, h, x, y] of [[.05, DH, -dw / 2 + .025, DH / 2], [.05, DH, dw / 2 - .025, DH / 2], [dw, .06, 0, DH - .03], [dw, .1, 0, .05]]) { const b = new THREE.Mesh(BOX, frameM); b.scale.set(w, h, .05); b.position.set(x, y, 0); p.add(b); }
+      p.position.z = HZ - .14; grp.add(p); return p;
+    };
+    const sd = { L: panel(), R: panel(), d0, d1, dw, c: toW((d0 + d1) / 2, HZ).setY(y0 + 1), k: 1, open: false };
+    slideDoors.push(sd);
+    // ---- Einrichtung ----
+    if (S.kind === 'market') {
+      for (const x of [-16, -11, -6, 5, 10, 15]) {                      // Regalreihen, beidseitig mit Ware
+        const z0 = -10.5, z1 = 4, L = z1 - z0, zc = (z0 + z1) / 2;
+        bx(1, 2, L, x, 1, zc, 0x9aa0a6); bx(1.06, .08, L + .06, x, 2.04, zc, 0x7d848b);
+        tq(goodsM, [[x + .531, .1, z1], [x + .531, .1, z0], [x + .531, 1.95, z0], [x + .531, 1.95, z1]], [0, 0, L / 3, 0, L / 3, 1, 0, 1]);
+        tq(goodsM, [[x - .531, .1, z0], [x - .531, .1, z1], [x - .531, 1.95, z1], [x - .531, 1.95, z0]], [0, 0, L / 3, 0, L / 3, 1, 0, 1]);
+        col(x - .55, x + .55, z0, z1);
+      }
+      bx(40, 2.2, .9, 0, 1.1, -iz + .45, 0xeef1f3);                       // Kühlregale hinten
+      tq(drinkM, [[-20, .15, -iz + .91], [20, .15, -iz + .91], [20, 2, -iz + .91], [-20, 2, -iz + .91]], [0, 0, 10, 0, 10, 1, 0, 1]);
+      col(-20, 20, -iz, -iz + .9);
+      for (const x of [-6, -10.5, -15]) {                                 // Kassen am Eingang
+        bx(.8, .9, 2.6, x, .45, 8.3, 0x3a3f46); bx(.62, .02, 2.4, x, .91, 8.3, 0x111111); bx(.35, .25, .3, x - .15, 1.05, 9.3, 0x222831); bx(.06, .5, .06, x - .3, 1.15, 7.2, 0x888888); bx(.5, .9, .5, x + .75, .45, 9.4, 0x5b6470);
+        col(x - .4, x + .4, 7, 9.6);
+      }
+      const fruit = [0x7cb342, 0xff9800, 0xfdd835, 0xe53935, 0x8e24aa, 0x43a047];
+      for (let i = 0; i < 6; i++) {                                     // Obst & Gemüse
+        const x = 8 + (i % 3) * 3.2, z = 8.3 + Math.floor(i / 3) * 2.2;
+        bx(2.6, .7, 1.6, x, .35, z, 0x8d6e4b); bx(2.4, .12, 1.4, x, .76, z, fruit[i]);
+        for (let k = 0; k < 10; k++) bx(.12, .12, .12, x + rand(-1.05, 1.05), .86, z + rand(-.55, .55), fruit[i]);
+        col(x - 1.3, x + 1.3, z - .8, z + .8);
+      }
+      const signM = roomMat({ map: ITEX.signs, side: THREE.DoubleSide }, .6);
+      for (const [x, z, row] of [[11.2, 6.2, 0], [0, -11.8, 1], [-8.5, -1.5, 2], [7.5, -1.5, 3]]) {   // Schilder über den Gängen
+        const v0 = 1 - (row + 1) / 4, v1 = 1 - row / 4;
+        tq(signM, [[x - 1.5, 3, z], [x + 1.5, 3, z], [x + 1.5, 3.7, z], [x - 1.5, 3.7, z]], [0, v0, 1, v0, 1, v1, 0, v1]);
+        for (const s of [-1.3, 1.3]) bx(.02, H - 3.7, .02, x + s, (3.7 + H) / 2, z, 0x555555);
+      }
+      for (const x of [-14, -4, 6, 16]) bx(.3, .05, 22, x, H - .03, -2, 0xffffff, emi);   // Lichtbänder
+    } else if (S.kind === 'school') {
+      for (const x of [-9, 9]) {                                        // Trennwände: Flur in der Mitte, links/rechts Klassenzimmer
+        for (const [z0, z1] of [[-iz, -.7], [.7, iz]]) { bx(.15, H, z1 - z0, x, H / 2, (z0 + z1) / 2, WALL); col(x - .08, x + .08, z0, z1); }
+        bx(.15, H - 2.3, 1.4, x, (H + 2.3) / 2, 0, WALL);
+      }
+      for (let i = 0; i < 26; i++) { const x = -7.2 + i * .56; bx(.54, 1.85, .45, x, .925, -iz + .23, i % 2 ? 0x2f6db5 : 0x3b82c4); bx(.04, .2, .02, x + .18, 1.05, -iz + .465, 0xd0d0d0); }   // Spinde
+      col(-7.5, 7.3, -iz, -iz + .45);
+      bx(2.4, .45, .4, -2, .225, 0, 0x8d6e4b); col(-3.2, -.8, -.2, .2);   // Bank
+      tq(roomMat({ map: ITEX.notes }, .5), [[-8.92, 1.1, 2.6], [-8.92, 1.1, 1], [-8.92, 2.1, 1], [-8.92, 2.1, 2.6]], U4);   // Pinnwand
+      for (const x of [-1.6, 4.6]) { bx(.5, .5, .5, x, .25, iz - .6, 0x6d4c41); bx(.8, .9, .8, x, .95, iz - .6, 0x2e7d32); }   // Pflanzen
+      const room = (sg, lines) => {
+        const xb = sg * (ix - .02), bm = roomMat({ map: ITEX.board(lines) }, .3);
+        tq(bm, sg < 0 ? [[xb, 1, 2.2], [xb, 1, -2.2], [xb, 2.35, -2.2], [xb, 2.35, 2.2]] : [[xb, 1, -2.2], [xb, 1, 2.2], [xb, 2.35, 2.2], [xb, 2.35, -2.2]], U4);   // Tafel
+        bx(.05, 1.5, 4.6, xb + sg * .03, 1.675, 0, 0x6d4c41); bx(.08, .05, 4.4, xb - sg * .05, .97, 0, 0x8d6e4b);
+        const xt = sg * (ix - 2); bx(.8, .76, 1.6, xt, .38, -2.8, 0x8d6e4b); bx(.5, .45, .5, xt + sg * .6, .225, -2.8, 0x37474f); col(xt - .4, xt + .4, -3.6, -2);   // Lehrerpult
+        for (let r = 0; r < 4; r++) for (const z of [-3.2, 0, 3.2]) {   // Zweiertische + Stühle, Blick zur Tafel
+          const x = sg * (ix - 4.5 - r * 2.6);
+          bx(.6, .04, 1.3, x, .74, z, 0xc8a679);
+          for (const dz of [-.6, .6]) for (const dx of [-.26, .26]) bx(.04, .72, .04, x + dx, .36, z + dz, 0x555b61);
+          for (const dz of [-.33, .33]) { const xc = x - sg * .55; bx(.42, .04, .4, xc, .44, z + dz, 0x1e88e5); bx(.04, .4, .4, xc - sg * .2, .66, z + dz, 0x1e88e5); bx(.03, .42, .03, xc, .21, z + dz, 0x555b61); }
+          col(x - .3, x + .3, z - .65, z + .65);
+        }
+        for (let k = 0; k < 3; k++) bx(2.2, 1.4, .02, sg * (12 + k * 5), 1.75, -iz + .015, 0xcfe8ff, emi);   // Fenster (Tageslicht)
+      };
+      room(-1, ['Mathe 3b', '12 + 7 = 19', '8 · 6 = 48', 'Hausaufgabe: S. 42 Nr. 3']);
+      room(1, ['Deutsch 4a', 'Der Hase springt über die Wiese.', 'Nomen, Verben, Adjektive']);
+      for (const x of [-21, -14, -4, 4, 14, 21]) for (const z of [-2.5, 2.5]) bx(1.2, .04, 1.2, x, H - .02, z, 0xffffff, emi);
+    } else {                                                            // Tankstellen-Shop
+      bx(5, 1.05, .8, 6.5, .525, 2.2, 0x37474f); bx(5.1, .05, .9, 6.5, 1.075, 2.2, 0xb0bec5); bx(.4, .3, .35, 5.2, 1.25, 2.2, 0x212121);   // Theke + Kasse
+      bx(.35, .45, .35, 8.4, 1.32, 2.15, 0x5d4037); bx(.2, .1, .2, 8.4, 1.6, 2.15, 0xc62828); col(4, 9, 1.8, 2.6);   // Kaffeemaschine
+      bx(.5, 2.2, 5, ix - .25, 1.1, 1.5, 0x8d8d8d); tq(goodsM, [[ix - .51, .2, -1], [ix - .51, .2, 4], [ix - .51, 2.1, 4], [ix - .51, 2.1, -1]], [0, 0, 5 / 3, 0, 5 / 3, 1, 0, 1]); col(ix - .5, ix, -1, 4);
+      for (const x of [-6.5, -2.5]) {                                   // Snack-Regale
+        const z0 = -4, z1 = 2, L = z1 - z0;
+        bx(.9, 1.6, L, x, .8, -1, 0x9aa0a6);
+        tq(goodsM, [[x + .451, .1, z1], [x + .451, .1, z0], [x + .451, 1.55, z0], [x + .451, 1.55, z1]], [0, 0, L / 3, 0, L / 3, .75, 0, .75]);
+        tq(goodsM, [[x - .451, .1, z0], [x - .451, .1, z1], [x - .451, 1.55, z1], [x - .451, 1.55, z0]], [0, 0, L / 3, 0, L / 3, .75, 0, .75]);
+        col(x - .45, x + .45, z0, z1);
+      }
+      bx(12, 2.1, .8, -3.5, 1.05, -iz + .4, 0xeef1f3); tq(drinkM, [[-9.5, .15, -iz + .81], [2.5, .15, -iz + .81], [2.5, 1.95, -iz + .81], [-9.5, 1.95, -iz + .81]], [0, 0, 3, 0, 3, 1, 0, 1]); col(-9.5, 2.5, -iz, -iz + .8);
+      for (const z of [-1.5, 1.5]) { const x = -9.4; bx(.08, 1.05, .08, x, .525, z, 0x444444); bx(.7, .04, .7, x, 1.07, z, 0xd7ccc8); bx(.45, .03, .45, x, .015, z, 0x444444); col(x - .35, x + .35, z - .35, z + .35); }   // Stehtische
+      for (const x of [-7, -2, 3, 8]) bx(1.2, .04, .5, x, H - .02, 0, 0xffffff, emi);
+    }
+    // zusammenfassen: wenige Zeichenaufrufe
+    const add = (parent, list, mat, cast) => { if (!list.length) return; const g = mergeGeometries(list); if (!g) return; const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.castShadow = !!cast; parent.add(m); };
+    add(grp, vc, roomMat({ vertexColors: true }, .42));
+    add(grp, emi, new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }));
+    for (const [mat, list] of tex) add(grp, list, mat);
+    for (const [mat, list] of etex) add(ext, list, mat, true);
+    cull(grp, 95);                                                      // Innenraum nur aus der Nähe zeichnen
+    { const a = toW(-ix + .1, -iz + .1), b = toW(ix - .1, iz - .1); S.ent.fl.hollow = new THREE.Box3(V(Math.min(a.x, b.x), y0, Math.min(a.z, b.z)), V(Math.max(a.x, b.x), y0 + H, Math.max(a.z, b.z))); }
+    interiors.push({ kind: S.kind, x: S.x, z: S.z, grp, door: sd.c });
+  }
+}
+buildInteriors();
 POI.Autobahn = [R[3], HZ - 20];
 POI.Fernsehturm = [TVT.x, TVT.z];
 POI.A81 = [HX, -600];
@@ -625,7 +815,7 @@ function buildTankstelle(cx, cz, isSpawn) {
     ent.fl = addFlammable({ kind: 'pump', box: new THREE.Box3().setFromObject(pump).expandByScalar(.2), mats: [pm], explodeAfter: 3, owner: ent });
     colliders.push({ minX: kx + ix - .6, maxX: kx + ix + .6, minZ: cz + iz - 2.25, maxZ: cz + iz + 2.25 });
   }
-  building(cx + 16, cz, 14, 22, 4.6, 'shop', '#f0f0f0');
+  building(cx + 16, cz, 14, 22, 4.6, 'shop', '#f0f0f0', { front: [-1, 0], enter: 'shop' });
   sign(['SHOP · BISTRO · WASCHANLAGE'], 12, 1, cx + 8.9, 4, cz, -Math.PI / 2, '#dd1d21', '#fff', 'bold 46px system-ui');
   box(.4, 9, .4, M(0x888888), cx - 31, 4.5, cz - 28);
   const nm = isSpawn ? 'Pforzheimer Str.' : 'Neckarstraße';
@@ -796,9 +986,11 @@ async function getVehicle(id) {
   if (player.inCar) exitCar();
   msg('Hole ' + v.name + ' …', 2);
   if (v.type === 'scooter') {
+    if (phone.where === 'holder') setPhone('pocket');                  // Scooter hat keinen Magneten
+    dashRemove();                                                        // ... und keine Dashcam
     const s = buildScooter(); shade(s);
     setVehicleVisual(s, s);
-    Object.assign(pcar, { half: V(.3, 1.2, .5), wheels: [], head: V(0, 1.6, -.05), seatHint: V(0, 1.2, 0), exitPos: V(.9, 0, 0), doors: [], seats: [V(0, 1.6, -.05)], screen: null, cluster: null, rainFx: null });
+    Object.assign(pcar, { half: V(.3, 1.2, .5), wheels: [], head: V(0, 1.6, -.05), seatHint: V(0, 1.2, 0), exitPos: V(.9, 0, 0), doors: [], seats: [V(0, 1.6, -.05)], screen: null, cluster: null, rainFx: null, doorGlass: null, wins: null, winT: null, dmg: null, dents: [], crack: null });
     pcar.hit.scale.set(.5, 1.2, 1); pcar.hit.position.y = .6; vehicleCache.scooter = s.clone(true);
   } else {
     try { const g = v.file ? await AS.loadUrl(v.file) : await AS.loadCar(); upgradePlayerCar(g, v.id); }
@@ -821,8 +1013,9 @@ function resetVehicle(nearPlayer) {
     camera.getWorldDirection(v1); v1.y = 0; v1.normalize();
     c.group.position.set(headWorld.x + v1.x * 4, 0, headWorld.z + v1.z * 4); c.heading = Math.atan2(v1.x, v1.z) + Math.PI / 2;
   } else { const [x, z] = spawnCarPos(); c.group.position.set(x, 0, z); c.heading = 0; }
-  c.group.position.y = groundAt(c.group.position.x, c.group.position.z);
+  c.group.position.y = surfaceAt(c.group.position.x, c.group.position.z);
   c.group.rotation.set(0, c.heading, 0);
+  repairCar(c);                                                       // Dellen, kaputte Lichter und Scheiben weg
 }
 // Teile mit Markierung ein-/ausblenden: "inner" = Innenraum (nur aus der Nähe), "outer" = von innen unsichtbar (Räder, Lampen)
 const flagged = new WeakMap();
@@ -835,8 +1028,10 @@ const innerVis = (root, on) => flagVis(root, 'inner', on);
 function remoteVehicleMesh(type) {
   if (type === 'scooter') return vehicleCache.scooter ? vehicleCache.scooter.clone(true) : buildScooter();
   if (vehicleCache[type]) {
-    // weit weg reicht eine vereinfachte Kopie desselben Autos (spart auf der Quest viele Dreiecke)
-    const full = vehicleCache[type].clone(true), low = vehicleFar[type]; if (!low) return full;
+    // eigene Materialien je Auto (Schäden/Alarm eines Spielers sollen nicht an allen Autos gleichen Typs auftauchen)
+    const full = carClone(vehicleCache[type]), low = vehicleFar[type];
+    full.traverse(o => { if (o.isMesh && o.userData.inner) [].concat(o.material).forEach(m => liftMat(m)); });
+    if (!low) return full;
     const lod = new THREE.LOD(); lod.addLevel(full, 0);
     lod.addLevel(new THREE.Mesh(low, [M(metaOf(type).paint, { metalness: .6, roughness: .3 }), lowTrimMat, M(0x141b22, { metalness: .9, roughness: .05 })]), 45);
     return lod;
@@ -976,6 +1171,8 @@ class PSys {
   }
 }
 const fireBig = new PSys(1600, 3.2, true), fireSmall = new PSys(700, .35, true), smoke = new PSys(900, 6, false, true);
+const fireHuge = new PSys(450, 10, true), smokeHuge = new PSys(260, 22, false, true);   // brennender Fernsehturm (von weit weg sichtbar)
+let towerFxT = 0;
 
 const DEB = 220;
 const debMesh = new THREE.InstancedMesh(BOX, M(0xffffff, { roughness: .8 }), DEB);
@@ -1108,10 +1305,17 @@ function updFire(dt) {
     const f = burning[n]; f.burnT += dt; const b = fBox(f);
     const sx = b.max.x - b.min.x, sy = b.max.y - b.min.y, sz = b.max.z - b.min.z;
     const big = f.kind === 'building';
-    const rate = big ? Math.min(40, Math.sqrt(sx * sz) * 1.2) : 14;
+    const rate = f.tower ? 70 : big ? Math.min(40, Math.sqrt(sx * sz) * 1.2) : 14;
+    const towerTop = f.tower ? b.min.y + Math.min(sy, 4 + f.burnT * 1.3) : 0;   // Fernsehturm: Flammen klettern hoch
     for (let i = 0; i < rate * dt * (f.burnT < 2 ? f.burnT / 2 : 1); i++) {
       let x, y, z; const side = Math.random();
-      if (side < .4 || !big) { x = rand(b.min.x, b.max.x); z = rand(b.min.z, b.max.z); y = b.max.y - (big ? 0 : rand(0, sy * .5)); }
+      if (f.tower) {                                                    // rund um den Schaft (oben der Korb ist breiter)
+        y = rand(b.min.y + .5, towerTop); const a = rand(0, 7), hh = y - b.min.y, rr = hh > 134 && hh < 152 ? 7.8 : 5.5 - Math.min(1, hh / 136) * 2.7;
+        x = (b.min.x + b.max.x) / 2 + Math.cos(a) * rr; z = (b.min.z + b.max.z) / 2 + Math.sin(a) * rr;
+        fireHuge.spawn(x, y, z, Math.cos(a) * 1.5, rand(3, 7), Math.sin(a) * 1.5, rand(.8, 1.6));
+        if (Math.random() < .35) smokeHuge.spawn(x, y + 4, z, rand(-1.5, 1.5) + 2, rand(5, 9), rand(-1.5, 1.5), rand(7, 12));
+      }
+      else if (side < .4 || !big) { x = rand(b.min.x, b.max.x); z = rand(b.min.z, b.max.z); y = b.max.y - (big ? 0 : rand(0, sy * .5)); }
       else { y = rand(b.min.y + sy * .3, b.max.y); if (Math.random() < .5) { x = Math.random() < .5 ? b.min.x : b.max.x; z = rand(b.min.z, b.max.z); } else { z = Math.random() < .5 ? b.min.z : b.max.z; x = rand(b.min.x, b.max.x); } }
       (big ? fireBig : fireSmall).spawn(x, y, z, rand(-.5, .5), rand(1.5, 3.5), rand(-.5, .5), rand(.5, 1.1));
       if (!big) fireBig.spawn(x, y, z, rand(-.3, .3), rand(1, 2), rand(-.3, .3), rand(.2, .5));
@@ -1223,7 +1427,7 @@ function hitAt(p, dirV) {
   }
   for (const pr of props) if (!pr.broken && pr.fl.box.clone().expandByScalar(.1).containsPoint(p)) { breakPropNet(pr); return 'prop'; }
   for (const f of flammables) if (f.kind === 'pump' && !f.done && f.box.containsPoint(p)) { igniteNet(f, 2); return 'pump'; }
-  for (const f of flammables) if (f.kind === 'building' && f.box.clone().expandByScalar(.15).containsPoint(p)) { spawnDebris(p, 0xbbb4a8, 6, .12, 2); return 'wall'; }
+  for (const f of flammables) if (f.kind === 'building' && !f.hollow?.containsPoint(p) && f.box.clone().expandByScalar(.15).containsPoint(p)) { spawnDebris(p, 0xbbb4a8, 6, .12, 2); return 'wall'; }   // im Innenraum ist Luft
   return null;
 }
 function heatAt(p, dt) {
@@ -1318,7 +1522,7 @@ function respawn() {
 }
 function placeHeadAt(x, z) {
   const off = v1.copy(camera.position).setY(0).applyAxisAngle(UP, dolly.rotation.y);
-  dolly.position.set(x - off.x, groundAt(x, z), z - off.z);
+  dolly.position.set(x - off.x, surfaceAt(x, z), z - off.z);
 }
 
 // ===================================================================
@@ -1472,13 +1676,20 @@ function drawApp() {
     phone.gallery.slice(-12).forEach((it, k) => {
       const i = phone.gallery.length - Math.min(12, phone.gallery.length) + k;
       const x = 12 + (k % 3) * 114, y = 140 + Math.floor(k / 3) * 150;
-      g.drawImage(it.type === 'photo' ? it.c : it.thumb, x, y, 108, 142); if (it.type === 'clip') { icon(g, 'play', x + 54, y + 71, 1.2); tx(g, it.len + ' s', x + 96, y + 130, 13, '#fff', 'right'); }
+      if (it.dash) { g.fillStyle = '#000'; g.fillRect(x, y, 108, 142); const s = it.thumb, sw = s.height * 108 / 142; g.drawImage(s, (s.width - sw) / 2, 0, sw, s.height, x, y, 108, 142); tx(g, 'Dashcam', x + 8, y + 14, 11, '#ffd21a', 'left', 700); }   // Querformat: Mitte ausschneiden
+      else g.drawImage(it.type === 'photo' ? it.c : it.thumb, x, y, 108, 142);
+      if (it.type === 'clip') { icon(g, 'play', x + 54, y + 71, 1.2); tx(g, it.len + ' s', x + 96, y + 130, 13, '#fff', 'right'); }
       btn(x, y, 108, 142, 'view:' + i);
     });
   } else if (a === 'view') {
     const it = phone.gallery[phone.view];
     if (it) {
-      if (it.type === 'clip') { if (it.vid.paused) it.vid.play().catch(() => { }); if (it.vid.readyState >= 2) g.drawImage(it.vid, 0, 60, PW, PH - 200); else g.drawImage(it.thumb, 0, 60, PW, PH - 200); }
+      if (it.type === 'clip') {
+        if (it.vid.paused) it.vid.play().catch(() => { });
+        const src = it.vid.readyState >= 2 ? it.vid : it.thumb;
+        if (it.dash) { g.fillStyle = '#000'; g.fillRect(0, 60, PW, PH - 200); const h = PW * 9 / 16; g.drawImage(src, 0, 60 + (PH - 200 - h) / 2, PW, h); tx(g, 'Dashcam-Video', PW / 2, 110, 18, '#ffd21a', 'center', 700); }   // Querformat mit schwarzen Balken
+        else g.drawImage(src, 0, 60, PW, PH - 200);
+      }
       else g.drawImage(it.c, 0, 60, PW, PH - 200);
       rr(g, 20, PH - 130, 150, 54, 14, '#333'); tx(g, '← Zurück', 95, PH - 103, 20); btn(20, PH - 130, 150, 54, 'app:gal');
       rr(g, 190, PH - 130, 150, 54, 14, '#2b6cff'); tx(g, 'Speichern', 265, PH - 103, 20); btn(190, PH - 130, 150, 54, 'save');
@@ -1663,9 +1874,9 @@ function updPhone(dt) {
     if (v1.distanceTo(v2) < .16) { setPhone('holder'); msg('Handy in der Halterung'); }
   }
 }
-function capture() {
-  const w = rt.width, h = rt.height, buf = new Uint8Array(w * h * 4);
-  renderer.readRenderTargetPixels(rt, 0, 0, w, h, buf);
+function capture(target = rt) {
+  const w = target.width, h = target.height, buf = new Uint8Array(w * h * 4);
+  renderer.readRenderTargetPixels(target, 0, 0, w, h, buf);
   const [c, g] = C(w, h); const id = g.createImageData(w, h);
   for (let y = 0; y < h; y++) id.data.set(buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
   g.putImageData(id, 0, 0); return c;
@@ -1708,30 +1919,32 @@ function updHolderShake(dt) {
 }
 // Handy-Kamerabild asynchron auslesen (für Video + Bildschirm-Teilen): die GPU muss nicht anhalten -> kein Ruckler.
 // WebGL2: Pixel in einen Puffer kopieren lassen und erst abholen, wenn die GPU fertig ist.
-const grab = { want: [], pending: null, sync: null, pbo: null, buf: null, can: null, g: null };
-function grabRT(cb) { grab.want.push(cb); }
-function grabIssue() {
+// Je Kamera ein eigener Ausleser (Handy, Dashcam)
+const mkGrab = target => ({ target, want: [], pending: null, sync: null, pbo: null, buf: null, can: null, g: null });
+const grab = mkGrab(rt);
+function grabRT(cb, G = grab) { G.want.push(cb); }
+function grabIssue(G = grab) {
   const gl = renderer.getContext();
-  if (!grab.want.length || grab.sync || !renderer.capabilities.isWebGL2) { if (!renderer.capabilities.isWebGL2 && grab.want.length) { const c = capture(); grab.want.splice(0).forEach(f => f(c)); } return; }
-  const w = rt.width, h = rt.height;
-  if (!grab.pbo) { grab.pbo = gl.createBuffer(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, grab.pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, w * h * 4, gl.STREAM_READ); grab.buf = new Uint8Array(w * h * 4); [grab.can, grab.g] = C(w, h); grab.img = grab.g.createImageData(w, h); }
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, grab.pbo);
-  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);         // liest aus dem gerade gebundenen Handy-Kamerabild
+  if (!G.want.length || G.sync || !renderer.capabilities.isWebGL2) { if (!renderer.capabilities.isWebGL2 && G.want.length) { const c = capture(G.target); G.want.splice(0).forEach(f => f(c)); } return; }
+  const w = G.target.width, h = G.target.height;
+  if (!G.pbo) { G.pbo = gl.createBuffer(); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, G.pbo); gl.bufferData(gl.PIXEL_PACK_BUFFER, w * h * 4, gl.STREAM_READ); G.buf = new Uint8Array(w * h * 4); [G.can, G.g] = C(w, h); G.img = G.g.createImageData(w, h); }
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, G.pbo);
+  gl.readPixels(0, 0, w, h, gl.RGBA, gl.UNSIGNED_BYTE, 0);         // liest aus dem gerade gebundenen Kamerabild
   gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-  grab.sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
-  grab.pending = grab.want.splice(0);
+  G.sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0); gl.flush();
+  G.pending = G.want.splice(0);
 }
-function grabPoll() {
-  if (!grab.sync) return;
-  const gl = renderer.getContext(), st = gl.clientWaitSync(grab.sync, 0, 0);
+function grabPoll(G = grab) {
+  if (!G.sync) return;
+  const gl = renderer.getContext(), st = gl.clientWaitSync(G.sync, 0, 0);
   if (st === gl.TIMEOUT_EXPIRED) return;
-  gl.deleteSync(grab.sync); grab.sync = null;
-  const w = rt.width, h = rt.height;
-  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, grab.pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, grab.buf); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
-  for (let y = 0; y < h; y++) grab.img.data.set(grab.buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
-  grab.g.putImageData(grab.img, 0, 0);
-  for (const f of grab.pending) f(grab.can);
-  grab.pending = null;
+  gl.deleteSync(G.sync); G.sync = null;
+  const w = G.target.width, h = G.target.height;
+  gl.bindBuffer(gl.PIXEL_PACK_BUFFER, G.pbo); gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, G.buf); gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+  for (let y = 0; y < h; y++) G.img.data.set(G.buf.subarray((h - 1 - y) * w * 4, (h - y) * w * 4), y * w * 4);
+  G.g.putImageData(G.img, 0, 0);
+  for (const f of G.pending) f(G.can);
+  G.pending = null;
 }
 // Handykamera: am PC jedes Bild, in VR jedes 2. Bild (36 fps – echte Handys filmen mit 30). Schatten werden dafür nicht neu berechnet.
 let camFrame = 0;
@@ -1993,7 +2206,12 @@ function carAction(a) {
   if (a === 'navstop') { stopNav(); playVoice('nav_ende', true); return; }
   phoneAction(a);                                                      // Anrufen / Annehmen / Ablehnen / Auflegen läuft übers Handy
 }
-const cbtn = (x, y, w, h, a) => cp.btns.push({ x, y, w, h, a });
+let cbtnList = cp.btns;
+const cbtn = (x, y, w, h, a) => cbtnList.push({ x, y, w, h, a });
+function localCarView() {
+  return { btns: cp.btns, conn: cp.conn, app: cp.app, call: phone.call, callMin: cp.callMin, locked: pcar.locked, appT: cp.appT, name: net.name, veh: vehicle.name,
+    players: [...net.players.values()], nav, speed: Math.abs(pcar.speed), pos: pcar.group.position, heading: pcar.heading, alert: cp.alert, banner: cp.banner, ripple: cp.ripple };
+}
 // Text auf mehrere Zeilen umbrechen
 function wrapText(g, s, maxW) { const out = []; let line = ''; for (const w of s.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; }
 function warnIcon(g, x, y, s = 1) { g.save(); g.translate(x, y); g.scale(s, s); g.beginPath(); g.moveTo(0, -18); g.lineTo(18, 14); g.lineTo(-18, 14); g.closePath(); g.fillStyle = '#ffd21a'; g.fill(); g.fillStyle = '#111'; g.fillRect(-2.5, -7, 5, 12); g.fillRect(-2.5, 8, 5, 4); g.restore(); }
@@ -2014,7 +2232,7 @@ function navArrow(g, dir, x, y, s = 1) {
   g.restore();
 }
 // Karte mit Route (Blick in Fahrtrichtung = oben), dunkles Design wie im Auto; Angreifer = roter Punkt
-function drawRouteMap(g, x0, y0, w, h, S, heading, px, pz) {
+function drawRouteMap(g, x0, y0, w, h, S, heading, px, pz, nv = nav) {
   g.save(); g.beginPath(); g.rect(x0, y0, w, h); g.clip();
   g.fillStyle = '#1c2029'; g.fillRect(x0, y0, w, h);
   const cx = x0 + w / 2, cy = y0 + h * .7;
@@ -2027,10 +2245,10 @@ function drawRouteMap(g, x0, y0, w, h, S, heading, px, pz) {
   ln(R[3], HALF, R[3], HZ); ln(HALF + 8, R[4], HX, R[4]);
   g.lineWidth = 10; g.beginPath(); mroadPts.forEach((p, i) => i ? g.lineTo(p.x, p.z) : g.moveTo(p.x, p.z)); g.stroke();
   g.strokeStyle = '#b8823e'; g.lineWidth = 26; ln(-TS / 2, HZ, TS / 2, HZ); ln(HX, -TS / 2, HX, HZ);
-  if (nav.route) {
-    const r = nav.route; g.strokeStyle = '#3d8bff'; g.lineWidth = Math.max(7, 7 / S); g.lineJoin = 'round'; g.lineCap = 'round';
-    g.beginPath(); g.moveTo(px, pz); for (let i = nav.k; i < r.length; i++) g.lineTo(r[i].x, r[i].z); g.stroke();
-    g.fillStyle = '#e20074'; g.beginPath(); g.arc(nav.end.x, nav.end.z, 10 / S, 0, 7); g.fill();
+  if (nv.route) {
+    const r = nv.route; g.strokeStyle = '#3d8bff'; g.lineWidth = Math.max(7, 7 / S); g.lineJoin = 'round'; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(px, pz); for (let i = nv.k; i < r.length; i++) g.lineTo(r[i].x, r[i].z); g.stroke();
+    g.fillStyle = '#e20074'; g.beginPath(); g.arc(nv.end.x, nv.end.z, 10 / S, 0, 7); g.fill();
     g.strokeStyle = '#fff'; g.lineWidth = 3 / S; g.stroke();
   }
   if (vil.ped) { const q = vil.ped.root.position; g.fillStyle = Math.floor(time * 3) % 2 ? '#ff2020' : '#ff8080'; g.beginPath(); g.arc(q.x, q.z, 11 / S, 0, 7); g.fill(); }
@@ -2040,17 +2258,19 @@ function drawRouteMap(g, x0, y0, w, h, S, heading, px, pz) {
   g.beginPath(); g.moveTo(0, -15); g.lineTo(11, 11); g.lineTo(0, 5); g.lineTo(-11, 11); g.closePath(); g.fillStyle = '#fff'; g.fill();
   g.restore();
 }
-function drawCar() {
-  const g = cg; cp.btns = []; g.textBaseline = 'middle';
+function drawCar() { cp.btns = []; drawCarView(cg, localCarView()); }
+// W = was angezeigt wird (eigenes Auto oder – für Mitfahrer – das des Fahrers)
+function drawCarView(g, W) {
+  cbtnList = W.btns; g.textBaseline = 'middle';
   g.fillStyle = '#07080b'; g.fillRect(0, 0, CW, CH);
   // Leiste links (wie CarPlay): Uhrzeit, Home, Telefon, Karte
   g.fillStyle = '#15171d'; g.fillRect(0, 0, 76, CH);
-  tx(g, hhmm(), 38, 22, 17, '#fff', 'center', 700); tx(g, cp.conn ? '5G' : '–', 38, 42, 11, '#9aa', 'center', 700);
-  const showCall = phone.call && cp.conn && (phone.call.state === 'ring' || !cp.callMin);
+  tx(g, hhmm(), 38, 22, 17, '#fff', 'center', 700); tx(g, W.conn ? '5G' : '–', 38, 42, 11, '#9aa', 'center', 700);
+  const showCall = W.call && W.conn && (W.call.state === 'ring' || !W.callMin);
   const dock = [['home', '#3a3f4b', 92], ['tel', '#34c759', 172], ['map', '#2b6cff', 252]];
   for (const [id, c, y] of dock) {
-    const on = cp.app === id && !showCall; if (on) rr(g, 4, y - 30, 4, 60, 2, '#fff');
-    g.globalAlpha = cp.conn || id === 'home' ? 1 : .35;
+    const on = W.app === id && !showCall; if (on) rr(g, 4, y - 30, 4, 60, 2, '#fff');
+    g.globalAlpha = W.conn || id === 'home' ? 1 : .35;
     g.beginPath(); g.arc(40, y, 27, 0, 7); g.fillStyle = c; g.fill();
     if (id === 'home') { for (const [dx, dy] of [[-8, -8], [8, -8], [-8, 8], [8, 8]]) rr(g, 40 + dx - 6, y + dy - 6, 12, 12, 3, '#fff'); }
     else if (id === 'tel') icon(g, 'tel', 40, y, .6); else navArrow(g, 'gerade', 40, y + 2, .7);
@@ -2058,7 +2278,7 @@ function drawCar() {
   }
   // Türschloss-Schalter rechts (immer da)
   {
-    const lk = pcar.locked; g.fillStyle = '#101217'; g.fillRect(RX, 0, CW - RX, CH);
+    const lk = W.locked; g.fillStyle = '#101217'; g.fillRect(RX, 0, CW - RX, CH);
     rr(g, RX + 10, 118, 44, 120, 22, lk ? '#7a1f1f' : '#1f6b35');
     g.beginPath(); g.arc(RX + 32, lk ? 148 : 208, 18, 0, 7); g.fillStyle = '#fff'; g.fill();
     lockIcon(g, RX + 32, lk ? 150 : 210, lk, .55);
@@ -2069,7 +2289,7 @@ function drawCar() {
   const X0 = 84, cx = (X0 + RX) / 2;
   if (showCall) {
     // Anruf: eingehend (mit Klingelton), wählt, aktiv
-    const c = phone.call, ringing = c.state === 'ring';
+    const c = W.call, ringing = c.state === 'ring';
     if (ringing) for (let i = 0; i < 3; i++) { const k = (time * .8 + i / 3) % 1; g.beginPath(); g.arc(cx, 128, 46 + k * 50, 0, 7); g.strokeStyle = `rgba(52,199,89,${.55 * (1 - k)})`; g.lineWidth = 3; g.stroke(); }
     g.beginPath(); g.arc(cx, 128, 46, 0, 7); g.fillStyle = '#e20074'; g.fill(); tx(g, c.name[0].toUpperCase(), cx, 130, 44, '#fff', 'center', 700);
     tx(g, c.name, cx, 205, 30, '#fff', 'center', 700);
@@ -2081,19 +2301,19 @@ function drawCar() {
     if (ringing) { btnC(cx - 130, '#ff3b30', 'x', 'Ablehnen', 'decline'); btnC(cx + 130, '#34c759', 'tel', 'Annehmen', 'accept', Math.sin(time * 9) * 4); }
     else if (c.state !== 'offline') btnC(cx, '#ff3b30', 'x', 'Auflegen', 'hangup');
     if (!ringing) tx(g, 'Andere App antippen = Anruf läuft im Hintergrund weiter', cx, 22, 12, '#778', 'center', 500);
-  } else if (cp.app === 'home') {
-    tx(g, 'Guten Tag, ' + net.name, X0 + 24, 40, 20, '#fff', 'left', 700);
-    tx(g, cp.conn ? 'Telefon verbunden' : 'Kein Telefon verbunden – hol dein Handy raus', X0 + 24, 64, 13, cp.conn ? '#7fdc8f' : '#f0b45a', 'left', 600);
+  } else if (W.app === 'home') {
+    tx(g, 'Guten Tag, ' + W.name, X0 + 24, 40, 20, '#fff', 'left', 700);
+    tx(g, W.conn ? 'Telefon verbunden' : 'Kein Telefon verbunden – hol dein Handy raus', X0 + 24, 64, 13, W.conn ? '#7fdc8f' : '#f0b45a', 'left', 600);
     [['tel', 'Telefon', '#34c759'], ['map', 'Karte', '#2b6cff']].forEach(([id, n, c], i) => {
-      const k = ease((time - cp.appT - i * .08) / .3), x = cx - 170 + i * 190, y = 110 + (1 - k) * 20;
-      g.globalAlpha = Math.max(0, k) * (cp.conn ? 1 : .35); rr(g, x, y, 150, 150, 34, c);
+      const k = ease((time - W.appT - i * .08) / .3), x = cx - 170 + i * 190, y = 110 + (1 - k) * 20;
+      g.globalAlpha = Math.max(0, k) * (W.conn ? 1 : .35); rr(g, x, y, 150, 150, 34, c);
       if (id === 'tel') icon(g, 'tel', x + 75, y + 75, 1.5); else navArrow(g, 'gerade', x + 75, y + 79, 1.6);
       tx(g, n, x + 75, y + 178, 18, '#fff', 'center', 600); g.globalAlpha = 1;
       cbtn(x, y, 150, 190, 'app:' + id);
     });
-  } else if (cp.app === 'tel') {
+  } else if (W.app === 'tel') {
     tx(g, 'Telefon', X0 + 20, 36, 24, '#fff', 'left', 700); tx(g, 'Spieler online – antippen zum Anrufen', X0 + 20, 62, 13, '#99a', 'left', 500);
-    const list = [...net.players.values()];
+    const list = W.players;
     if (!list.length) { tx(g, 'Gerade ist niemand sonst online.', cx, 200, 19, '#aab'); tx(g, 'Andere Spieler erscheinen hier automatisch.', cx, 230, 14, '#778'); }
     list.slice(0, 8).forEach((p, i) => {
       const col = i % 2, row = Math.floor(i / 2), x = X0 + 10 + col * 306, y = 84 + row * 72;
@@ -2104,40 +2324,40 @@ function drawCar() {
       g.beginPath(); g.arc(x + 264, y + 31, 20, 0, 7); g.fillStyle = '#34c759'; g.fill(); icon(g, 'tel', x + 264, y + 31, .5);
       cbtn(x, y, 296, 62, 'call:' + p.id);
     });
-  } else if (cp.app === 'map') {
+  } else if (W.app === 'map') {
     const LW = 220; g.fillStyle = '#101217'; g.fillRect(X0, 0, LW, CH);   // links: große Liste mit Zielen
     tx(g, 'Ziele', X0 + 16, 26, 20, '#fff', 'left', 700);
     Object.keys(POI).forEach((n, i) => {
-      const y = 46 + i * 41, on = nav.on && nav.n === n;
+      const y = 46 + i * 41, on = W.nav.on && W.nav.n === n;
       rr(g, X0 + 8, y, LW - 16, 36, 10, on ? '#2b6cff' : '#1d2027');
       g.beginPath(); g.arc(X0 + 28, y + 18, 7, 0, 7); g.fillStyle = on ? '#fff' : '#e20074'; g.fill();
       tx(g, n, X0 + 44, y + 19, 16, '#fff', 'left', 600);
       cbtn(X0 + 8, y, LW - 16, 36, 'dest:' + n);
     });
-    const mx = X0 + LW, sp = Math.abs(pcar.speed), S = clamp(1.25 - sp * .028, .42, 1.25), pp = pcar.group.position;
-    drawRouteMap(g, mx, 0, RX - mx, CH, S, pcar.heading, pp.x, pp.z);   // rechts: Karte mit Route
-    if (nav.on && nav.info) {
+    const mx = X0 + LW, sp = W.speed, S = clamp(1.25 - sp * .028, .42, 1.25), pp = W.pos;
+    drawRouteMap(g, mx, 0, RX - mx, CH, S, W.heading, pp.x, pp.z, W.nav);   // rechts: Karte mit Route
+    if (W.nav.on && W.nav.info) {
       rr(g, mx + 10, 10, RX - mx - 20, 70, 14, 'rgba(10,60,30,.92)');
-      navArrow(g, nav.info.dir, mx + 48, 45, 1);
-      tx(g, fmtShort(nav.info.d), mx + 88, 34, 24, '#fff', 'left', 700);
-      tx(g, nav.info.dir === 'ziel' ? 'Ziel: ' + nav.n : nav.info.dir === 'wenden' ? 'Wenden' : nav.info.dir[0].toUpperCase() + nav.info.dir.slice(1) + ' abbiegen', mx + 88, 60, 15, '#cfe', 'left', 600);
+      navArrow(g, W.nav.info.dir, mx + 48, 45, 1);
+      tx(g, fmtShort(W.nav.info.d), mx + 88, 34, 24, '#fff', 'left', 700);
+      tx(g, W.nav.info.dir === 'ziel' ? 'Ziel: ' + W.nav.n : W.nav.info.dir === 'wenden' ? 'Wenden' : W.nav.info.dir[0].toUpperCase() + W.nav.info.dir.slice(1) + ' abbiegen', mx + 88, 60, 15, '#cfe', 'left', 600);
       rr(g, RX - 118, CH - 52, 108, 40, 12, '#c0392b'); tx(g, 'Beenden', RX - 64, CH - 32, 15, '#fff', 'center', 700); cbtn(RX - 118, CH - 52, 108, 40, 'navstop');
     } else { rr(g, mx + 10, 10, RX - mx - 20, 44, 12, 'rgba(0,0,0,.6)'); tx(g, 'Ziel links antippen', (mx + RX) / 2, 32, 16, '#fff', 'center', 600); }
   }
   // Navigation läuft, aber andere App offen: kleiner Hinweis oben
-  if (nav.on && nav.info && (cp.app !== 'map' || showCall)) {
-    rr(g, RX - 250, 8, 240, 44, 12, 'rgba(10,60,30,.92)'); navArrow(g, nav.info.dir, RX - 222, 30, .55);
-    tx(g, fmtShort(nav.info.d) + ' · ' + (nav.info.dir === 'ziel' ? 'Ziel' : nav.info.dir), RX - 196, 31, 16, '#fff', 'left', 700);
+  if (W.nav.on && W.nav.info && (W.app !== 'map' || showCall)) {
+    rr(g, RX - 250, 8, 240, 44, 12, 'rgba(10,60,30,.92)'); navArrow(g, W.nav.info.dir, RX - 222, 30, .55);
+    tx(g, fmtShort(W.nav.info.d) + ' · ' + (W.nav.info.dir === 'ziel' ? 'Ziel' : W.nav.info.dir), RX - 196, 31, 16, '#fff', 'left', 700);
   }
   // Anruf im Hintergrund: grüner Punkt unten rechts – antippen öffnet das Gespräch wieder
-  if (phone.call && cp.conn && !showCall) {
+  if (W.call && W.conn && !showCall) {
     const pulse = 1 + Math.sin(time * 4) * .06;
     g.beginPath(); g.arc(RX - 40, CH - 40, 26 * pulse, 0, 7); g.fillStyle = '#34c759'; g.fill(); icon(g, 'tel', RX - 40, CH - 40, .6);
-    if (phone.call.state === 'active') { const s = Math.floor(time - phone.call.t0); tx(g, Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'), RX - 40, CH - 76, 12, '#8fe3a5', 'center', 700); }
+    if (W.call.state === 'active') { const s = Math.floor(time - W.call.t0); tx(g, Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'), RX - 40, CH - 76, 12, '#8fe3a5', 'center', 700); }
     cbtn(RX - 72, CH - 92, 64, 84, 'callmax');
   }
   // Warnung oben (brennendes Gebäude, NPC-Angriff)
-  const A = cp.alert;
+  const A = W.alert;
   if (A && time - A.t < 9) {
     const at = time - A.t, k = Math.min(ease(at / .35), ease((9 - at) / .35)), y = -120 + 128 * k;
     rr(g, X0 + 8, y, RX - X0 - 16, 104, 16, A.col);
@@ -2146,15 +2366,15 @@ function drawCar() {
     g.font = '500 14px system-ui,sans-serif'; wrapText(g, A.text, RX - X0 - 110).slice(0, 3).forEach((l, i) => tx(g, l, X0 + 80, y + 52 + i * 18, 14, '#fde', 'left', 500));
   }
   // "Telefon – Auto verbunden" Banner (gleitet von oben rein)
-  const bt = time - cp.banner;
+  const bt = time - W.banner;
   if (bt < 3.5) {
     const k = Math.min(ease(bt / .35), ease((3.5 - bt) / .35)), y = -70 + 82 * k;
     rr(g, cx - 210, y, 420, 62, 18, 'rgba(32,35,44,.97)');
     g.beginPath(); g.arc(cx - 178, y + 31, 20, 0, 7); g.fillStyle = '#34c759'; g.fill(); icon(g, 'tel', cx - 178, y + 31, .5);
     tx(g, 'Telefon – Auto verbunden', cx - 148, y + 23, 18, '#fff', 'left', 700);
-    tx(g, 'Handy von ' + net.name + ' · ' + vehicle.name, cx - 148, y + 44, 13, '#aab', 'left', 500);
+    tx(g, 'Handy von ' + W.name + ' · ' + W.veh, cx - 148, y + 44, 13, '#aab', 'left', 500);
   }
-  if (cp.ripple && time - cp.ripple.t < .35) { const k = (time - cp.ripple.t) / .35; g.beginPath(); g.arc(cp.ripple.x, cp.ripple.y, 12 + k * 46, 0, 7); g.fillStyle = `rgba(255,255,255,${.3 * (1 - k)})`; g.fill(); }
+  if (W.ripple && time - W.ripple.t < .35) { const k = (time - W.ripple.t) / .35; g.beginPath(); g.arc(W.ripple.x, W.ripple.y, 12 + k * 46, 0, 7); g.fillStyle = `rgba(255,255,255,${.3 * (1 - k)})`; g.fill(); }
 }
 
 // ---------- zweites Display (hinter dem Lenkrad): Intro "Willkommen", dann Menü | Mini-Karte | Tacho ----------
@@ -2210,21 +2430,21 @@ function drawCluster() {
   if (t < 4.2) { if (t > 3.4) drawClusterMain(g); g.globalAlpha = t > 3.4 ? 1 - (t - 3.4) / .8 : 1; drawIntro(g, t); g.globalAlpha = 1; return; }
   drawClusterMain(g);
 }
-function drawClusterMain(g) {
+function drawClusterMain(g, W = localCarView()) {
   // links: kleines Menü
   tx(g, hhmm(), 18, 22, 18, '#fff', 'left', 700);
-  const act = phone.call ? 1 : nav.on ? 0 : 3;
+  const act = W.call ? 1 : W.nav.on ? 0 : 3;
   [['Navigation', 'gps'], ['Telefon', 'tel'], ['Medien', 'play'], ['Fahrzeug', 'garage']].forEach(([n, ic], i) => {
     const y = 58 + i * 38, on = i === act;
     if (on) rr(g, 8, y - 16, 150, 32, 10, '#2b6cff');
     icon(g, ic, 26, y, .4); tx(g, n, 44, y + 1, 14, on ? '#fff' : '#9aa3b2', 'left', on ? 700 : 500);
   });
-  lockIcon(g, 24, 226, pcar.locked, .45); tx(g, pcar.locked ? 'Türen zu' : 'Türen offen', 40, 228, 12, pcar.locked ? '#ff9a9a' : '#8fe3a5', 'left', 700);
+  lockIcon(g, 24, 226, W.locked, .45); tx(g, W.locked ? 'Türen zu' : 'Türen offen', 40, 228, 12, W.locked ? '#ff9a9a' : '#8fe3a5', 'left', 700);
   // Mitte: Mini-Karte
-  const sp = Math.abs(pcar.speed), pp = pcar.group.position;
-  drawRouteMap(g, 170, 6, 350, KH - 12, clamp(1.1 - sp * .025, .4, 1.1), pcar.heading, pp.x, pp.z);
+  const sp = W.speed, pp = W.pos;
+  drawRouteMap(g, 170, 6, 350, KH - 12, clamp(1.1 - sp * .025, .4, 1.1), W.heading, pp.x, pp.z, W.nav);
   g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 2; g.strokeRect(170, 6, 350, KH - 12);
-  if (nav.on && nav.info) { rr(g, 178, 12, 190, 40, 10, 'rgba(10,60,30,.92)'); navArrow(g, nav.info.dir, 198, 32, .5); tx(g, fmtShort(nav.info.d), 220, 32, 17, '#fff', 'left', 700); }
+  if (W.nav.on && W.nav.info) { rr(g, 178, 12, 190, 40, 10, 'rgba(10,60,30,.92)'); navArrow(g, W.nav.info.dir, 198, 32, .5); tx(g, fmtShort(W.nav.info.d), 220, 32, 17, '#fff', 'left', 700); }
   // rechts: Tacho
   const kmh = sp * 3.6, cx = 644, cy = 134, R0 = 92, a0 = Math.PI * .75, a1 = Math.PI * 2.25, va = a0 + (a1 - a0) * clamp(kmh / 240, 0, 1);
   g.lineCap = 'round'; g.lineWidth = 10; g.strokeStyle = '#1d2230'; g.beginPath(); g.arc(cx, cy, R0, a0, a1); g.stroke();
@@ -2235,7 +2455,7 @@ function drawClusterMain(g) {
   tx(g, String(Math.round(kmh)), cx, cy + 18, 38, '#fff', 'center', 800); tx(g, 'km/h', cx, cy + 46, 12, '#9aa3b2', 'center', 600);
   tx(g, 'D', cx, cy - 30, 16, '#7fdc8f', 'center', 800);
   // unten links: Anruf
-  const c = phone.call;
+  const c = W.call;
   if (c && c.state !== 'offline') {
     const ringing = c.state === 'ring', p = 1 + (ringing ? Math.sin(time * 8) * .08 : 0);
     rr(g, 8, 176, 300, 70, 14, 'rgba(18,40,24,.96)');
@@ -2264,6 +2484,68 @@ function carAlert(title, text, col, short) {
 function fireAlert(why) {
   if (time - lastFireAlert < 300 || time < 5) return; lastFireAlert = time;   // höchstens alle 5 Minuten eine Warnung
   carAlert('Gebäude brennt nach ' + why + '.', 'Wenn du ein brennendes Gebäude siehst, bitte halte dich fern, um Verletzungen zu vermeiden.', '#b3261e', 'Brennendes Gebäude');
+}
+
+// ---------- Mitfahrer: im Auto eines anderen zeigen Hauptdisplay + Mini-Display dasselbe wie beim Fahrer ----------
+const [rCan, rCg] = C(CW, CH), rTex = new THREE.CanvasTexture(rCan); rTex.colorSpace = THREE.SRGBColorSpace; rTex.anisotropy = 4;
+const rMat = new THREE.MeshBasicMaterial({ map: rTex, toneMapped: false });
+const [rkCan, rKg] = C(KW, KH), rkTex = new THREE.CanvasTexture(rkCan); rkTex.colorSpace = THREE.SRGBColorSpace; rkTex.anisotropy = 4;
+const rkMat = new THREE.MeshBasicMaterial({ map: rkTex, toneMapped: false });
+const rideNav = { on: false, n: '', p: null, route: null, end: null, k: 1, info: null, offT: 0 };
+const rideScr = { p: null, mesh: null, main: null, clus: null, mainOrig: null, clusOrig: null, drawT: 0, navT: 0 };
+// Route des Fahrers nachbilden (gleiches Ziel), Fortschritt + nächste Abbiegung – ohne Ansagen
+function rideNavStep(p) {
+  const n = p.st?.cp?.n || '', pos = p.carMesh.position;
+  if (n !== rideNav.n) {
+    rideNav.n = n; rideNav.on = !!n && !!POI[n];
+    if (rideNav.on) { rideNav.p = POI[n]; rideNav.route = findRoute(pos.x, pos.z, rideNav.p[0], rideNav.p[1]); rideNav.end = rideNav.route[rideNav.route.length - 1]; rideNav.k = 1; rideNav.offT = 0; }
+    else { rideNav.route = null; rideNav.info = null; }
+  }
+  if (!rideNav.on || !rideNav.route) return;
+  const r = rideNav.route;
+  while (rideNav.k < r.length - 1) {
+    const A = r[rideNav.k], B = r[rideNav.k + 1], dx = B.x - A.x, dz = B.z - A.z, L = Math.hypot(dx, dz) || 1;
+    if (((pos.x - A.x) * dx + (pos.z - A.z) * dz) / L > 7 || Math.hypot(pos.x - A.x, pos.z - A.z) < 9) rideNav.k++; else break;
+  }
+  const A = r[rideNav.k - 1], B = r[rideNav.k], dx = B.x - A.x, dz = B.z - A.z, L2 = dx * dx + dz * dz || 1;
+  const t = clamp(((pos.x - A.x) * dx + (pos.z - A.z) * dz) / L2, 0, 1), off = Math.hypot(pos.x - A.x - dx * t, pos.z - A.z - dz * t);
+  rideNav.offT = off > 35 ? rideNav.offT + .3 : 0;
+  if (rideNav.offT > 1.6) { rideNav.n = ''; return; }                    // neu berechnen (nächster Schritt)
+  const distTo = i => { let d = Math.hypot(r[rideNav.k].x - pos.x, r[rideNav.k].z - pos.z); for (let j = rideNav.k; j < i; j++) d += Math.hypot(r[j + 1].x - r[j].x, r[j + 1].z - r[j].z); return d; };
+  let m = -1; for (let i = rideNav.k; i < r.length - 1; i++) if (r[i].turn) { m = i; break; }
+  rideNav.info = m >= 0 ? { dir: r[m].turn, d: distTo(m) } : { dir: 'ziel', d: distTo(r.length - 1) };
+}
+function rideView(p) {
+  const s = p.st, q = s.cp || {}, c = s.c;
+  return { btns: [], conn: !!q.k, app: q.a || 'home', call: q.c ? { name: q.c[0], state: q.c[1], t0: time - q.c[2] } : null, callMin: !!q.m, locked: s.lk !== 0, appT: -9,
+    name: p.name, veh: NICE_NAMES[p.carType] || p.carType, players: [...net.players.values()].filter(o => o !== p), nav: rideNav,
+    speed: c ? Math.hypot(c[10] || 0, c[11] || 0) : 0, pos: p.carMesh.position, heading: p.cyaw || 0, alert: null, banner: -9, ripple: null };
+}
+function rideScreensOff() {
+  if (rideScr.main && rideScr.main.material === rMat) rideScr.main.material = rideScr.mainOrig;
+  if (rideScr.clus && rideScr.clus.material === rkMat) rideScr.clus.material = rideScr.clusOrig;
+  Object.assign(rideScr, { p: null, mesh: null, main: null, clus: null }); rideNav.on = false; rideNav.n = ''; rideNav.route = null; rideNav.info = null;
+}
+function updRideScreens(dt) {
+  const p = player.ride ? net.players.get(player.ride.id) : null;
+  if (!p || !p.carMesh?.visible || p.carType === 'scooter') { if (rideScr.p) rideScreensOff(); return; }
+  if (rideScr.p !== p || rideScr.mesh !== p.carMesh) {
+    rideScreensOff(); rideScr.p = p; rideScr.mesh = p.carMesh; rideScr.drawT = 0;
+    const full = p.carMesh.isLOD ? p.carMesh.levels[0].object : p.carMesh;
+    full.traverse(o => { if (o.isMesh && o.userData.main) rideScr.main = o; if (o.isMesh && o.userData.cluster) rideScr.clus = o; });
+    if (rideScr.main) { rideScr.mainOrig = p.cmScreens.find(x => x.m === rideScr.main)?.orig || rideScr.main.material; fitTex(rTex, rideScr.main.userData.uvb); }
+    if (rideScr.clus) { rideScr.clusOrig = p.cmScreens.find(x => x.m === rideScr.clus)?.orig || rideScr.clus.material; fitTex(rkTex, rideScr.clus.userData.uvb); }
+  }
+  if (p.alarmOn) return;                                                // Alarm hat Vorrang ("!")
+  if (rideScr.main && rideScr.main.material !== rMat) rideScr.main.material = rMat;
+  if (rideScr.clus && rideScr.clus.material !== rkMat) rideScr.clus.material = rkMat;
+  rideScr.navT -= dt; if (rideScr.navT <= 0) { rideScr.navT = .3; rideNavStep(p); }
+  rideScr.drawT -= dt;
+  if (rideScr.drawT <= 0) {
+    const W = rideView(p); rideScr.drawT = W.app === 'map' ? 1 / 10 : 1 / 5;
+    if (rideScr.main) { drawCarView(rCg, W); rTex.needsUpdate = true; }
+    if (rideScr.clus) { rKg.textBaseline = 'middle'; rKg.fillStyle = '#04060a'; rKg.fillRect(0, 0, KW, KH); drawClusterMain(rKg, W); rkTex.needsUpdate = true; }
+  }
 }
 
 // ---------- Freiton beim Anrufen (Deutschland: 425 Hz, 1 s an, 4 s aus) ----------
@@ -2349,7 +2631,8 @@ function enterCar() {
 function exitCar() {
   player.inCar = false; if (pcar.doors[0]) pcar.doors[0].a = 1;
   for (const h of hands) if (h.held?.type === 'wheel') h.held = null;
-  if (phone.where === 'holder') setPhone('pocket');
+  // Handy am Magneten bleibt im Auto (nimmt auch weiter auf, wenn es gerade filmt)
+  if (phone.where === 'holder') msg('Dein Handy bleibt am Magneten im Auto', 2.5);
   pcar.group.localToWorld(v2.copy(pcar.exitPos));
   placeHeadAt(v2.x, v2.z);
 }
@@ -2370,7 +2653,9 @@ function updPlayerCar(dt) {
     } else if (d.pulse > 0) { d.pulse -= dt; d.a += ((d.pulse > .7 ? .9 : 0) - d.a) * Math.min(1, dt * 5); }
     else if ((player.inCar && d === c.doors[0]) || Math.abs(c.speed) > 1.5) d.a = Math.max(0, d.a - dt * 2);
     d.pivot.rotation.y = -d.side * d.a;
+    doorSound(d, d.a, d.handle, dt);                                    // Tür auf: Klacken, zu: dumpfer Schlag
   }
+  if (!sc) updWindows(dt);
   let thr = 0, brk = 0, stx = 0;
   if (player.inCar && !c.dead) {
     const L = handBy('left'), Rh = handBy('right');
@@ -2394,7 +2679,7 @@ function updPlayerCar(dt) {
     }
   }
   // Lenkrad dreht in die gleiche Richtung wie deine Hände
-  if (!sc) { c.wheelSpin.rotation.z = c.spin; if (c.brakeMat) c.brakeMat.emissiveIntensity = brk > .05 ? 4 : .5; }
+  if (!sc) { c.wheelSpin.rotation.z = c.spin; if (c.brakeMat) c.brakeMat.emissiveIntensity = c.dmg?.tl ? 0 : brk > .05 ? 4 : .5; }
   const inAir = !!c.air;
   if (inAir) { thr = 0; brk = 0; }   // in der Luft greifen die Räder nicht
   const maxV = sc ? 7 : 62, acc = sc ? 3.2 : 7.5;
@@ -2411,7 +2696,7 @@ function updPlayerCar(dt) {
   g.position.x += Math.sin(c.heading) * c.speed * dt; g.position.z += Math.cos(c.heading) * c.speed * dt;
   // Gelände: Höhe, Neigung nach vorne/hinten und zur Seite
   const sh = Math.sin(c.heading), chd = Math.cos(c.heading), wb = sc ? .4 : 1.4, tw = sc ? .12 : .85, x = g.position.x, z = g.position.z;
-  const hf = groundAt(x + sh * wb, z + chd * wb), hb = groundAt(x - sh * wb, z - chd * wb), hl = groundAt(x + chd * tw, z - sh * tw), hr = groundAt(x - chd * tw, z + sh * tw);
+  const hf = surfaceAt(x + sh * wb, z + chd * wb), hb = surfaceAt(x - sh * wb, z - chd * wb), hl = surfaceAt(x + chd * tw, z - sh * tw), hr = surfaceAt(x - chd * tw, z + sh * tw);
   const gy = (hf + hb + hl + hr) / 4, slope = Math.atan2(hf - hb, 2 * wb), side = Math.atan2(hl - hr, 2 * tw);
   // Höhe mit echter Schwerkraft: an Kuppen hebt das Auto bei Tempo ab, fliegt im Bogen und landet hart
   const D = Math.max(dt, .001);
@@ -2434,8 +2719,8 @@ function updPlayerCar(dt) {
     if (g.position.y <= gy) {                                 // Landung
       const impact = Math.max(0, gvy - c.vy);
       g.position.y = gy; c.air = false; c.vy = gvy;
-      if (impact > 2.5) { crash(impact * 1.8, g.position.clone()); const S = c.sus || (c.sus = {}); S.hv = (S.hv || 0) - impact * .05; }
-      if (impact > 14) damageCar(c, Math.floor(impact / 7));
+      if (impact > 2.5) { crash(impact * 1.8, null); const S = c.sus || (c.sus = {}); S.hv = (S.hv || 0) - impact * .05; }
+      dashKick(Math.min(1.6, impact * .09));                       // Landung: Dashcam nickt kräftig nach
     }
   }
   c.lean = sc ? (c.lean || 0) + ((-stx * .3 * clamp(c.speed / 4, 0, 1)) - (c.lean || 0)) * Math.min(1, dt * 5) : 0;
@@ -2451,11 +2736,15 @@ function updPlayerCar(dt) {
     let sum = 0;
     for (const w of c.wheels) {
       g.localToWorld(v1.copy(w.c));
-      const want = c.air ? -.07 : clamp(groundAt(v1.x, v1.z) - (v1.y - w.c.y), -.09, .09);   // in der Luft hängen die Räder aus
+      // jedes Rad fährt auf den Boden darunter (auch auf Bordsteine hoch); in der Luft hängen die Räder aus
+      const want = c.air ? -.07 : clamp(surfaceAt(v1.x, v1.z) - (v1.y - w.c.y), -.12, .22);
+      if (Math.abs(want - (w.lastWant ?? want)) > .04 && Math.abs(c.speed) > 1) dashKick(Math.min(.9, Math.abs(want - w.lastWant) * (2 + Math.abs(c.speed) * .12)));   // Kante -> Dashcam wackelt
+      w.lastWant = want;
       w.oy = (w.oy || 0) + (want - (w.oy || 0)) * Math.min(1, dt * 20);
       w.steer.position.y = w.c.y + w.oy; sum += w.oy;
     }
-    if (!c.air && gacc > 18) S.hv = (S.hv || 0) - Math.min(.5, (gacc - 18) * .01);   // Senke/Kante: Karosserie federt ein
+    if (!c.air && gacc > 18) { S.hv = (S.hv || 0) - Math.min(.5, (gacc - 18) * .01); dashKick(Math.min(1.2, (gacc - 18) * .008)); }   // Senke/Kante: Karosserie federt ein, Dashcam wackelt
+    dashRoad(Math.abs(c.speed), dt);                                          // leichtes Fahrbahn-Zittern der Dashcam
     const pit = spring(S, 'p', clamp(-S.a * .004, -.035, .035), dt, 55, 7);
     const rol = spring(S, 'r', clamp(S.lat * .004, -.05, .05), dt, 50, 7);
     const hv = clamp(spring(S, 'h', c.wheels.length ? sum / c.wheels.length * .6 : 0, dt, 110, 8), -.12, .07);
@@ -2481,7 +2770,7 @@ function updPlayerCar(dt) {
     if (d < RR) {
       v1.subVectors(g.position, o.group.position).setY(0).normalize(); g.position.addScaledVector(v1, RR - d);
       const imp = Math.abs(c.speed - o.speed * .5); crash(imp, o.group.position); c.speed *= -.25; o.speed = 0;
-      if (imp > 10) { damageCarNet(o, 3); damageCar(c, 1); }
+      if (imp > 14 && o.glassMat.visible) glassNet(o, o.group.position.clone().setY(o.group.position.y + 1.2));   // NPC-Auto: Scheiben gehen kaputt, brennt aber nicht
     }
   }
   if (Math.abs(c.speed) > 3) for (const p of peds) if (p.alive && p.root.position.distanceTo(g.position) < 1.9) killPedNet(p, v1.set(Math.sin(c.heading), 0, Math.cos(c.heading)));
@@ -2491,11 +2780,15 @@ function updPlayerCar(dt) {
     else { engine.o1.frequency.value = 38 + s * 3.2 + thr * 12; engine.o2.frequency.value = 19 + s * 1.6; engine.pa.setVolume(player.inCar && !c.dead ? .5 : 0); }
   }
 }
+// p = Aufprallpunkt (Welt) oder null (Landung)
 function crash(imp, p) {
   if (imp < 2) return;
   phone.crash = Math.max(phone.crash || 0, Math.min(.045, imp * .003));   // Handy in der Halterung wackelt kurz heftig
-  playAt(SND.crash, p, Math.min(2, imp / 8)); hands.forEach(h => haptic(h, Math.min(1, imp / 15), 150));
-  if (imp > 18) damageCar(pcar, Math.floor(imp / 9));
+  playAt(SND.crash, p || pcar.group.position, Math.min(2, imp / 8)); hands.forEach(h => haptic(h, Math.min(1, imp / 15), 150));
+  // Dashcam: wackelt; bei hartem Aufprall reißt sie ab und fliegt durchs Auto
+  if (p && imp > 12) dashFly(imp, p); else dashKick(Math.min(1.8, imp * .07));
+  // statt Feuer: echte Schäden (Dellen, kaputte Scheinwerfer, Scheiben)
+  if (p && imp > 8) carDamage(pcar, imp, p);
 }
 function seatPlayer() {
   if (vehicle.type === 'scooter') {   // auf dem Scooter steht man: echte Kopfhöhe, nur Position/Richtung folgen
@@ -2511,6 +2804,327 @@ function seatPlayer() {
   dolly.rotation.set(0, pcar.heading + Math.PI, 0);
   const off = v2.copy(player.calib).applyAxisAngle(UP, dolly.rotation.y);
   dolly.position.set(head.x - off.x, head.y - off.y + player.seatOff, head.z - off.z);
+}
+
+// ===================================================================
+// Auto-Extras: Dashcam, Fenster (X/Y), Unfallschäden (statt Feuer), Türgeräusche
+// ===================================================================
+let lpD = 0;
+SND.doorOpen = mkBuf(.4, (t, r) => (t < .025 ? r * (1 - t / .025) * .7 : 0) + (t > .05 && t < .075 ? r * (1 - (t - .05) / .025) * .45 : 0) + Math.sin(2 * Math.PI * 160 * t) * Math.exp(-t * 25) * .3);
+SND.doorClose = mkBuf(.55, (t, r) => { lpD += (r - lpD) * .06; return Math.sin(2 * Math.PI * 58 * t) * Math.exp(-t * 13) * 1.1 + lpD * Math.exp(-t * 18) * 2.2 + (t < .012 ? r * .6 : 0) + (t > .03 && t < .04 ? r * .25 : 0); });
+SND.glass = mkBuf(.9, (t, r) => { let s = r * Math.exp(-t * 9) * .45; for (const f of [3100, 4700, 6900, 5300, 8200]) s += Math.sin(2 * Math.PI * f * t + f) * Math.exp(-t * (6 + f / 900)) * .1; return s; });
+SND.winMotor = mkBuf(2.3, (t, r) => (Math.sign(Math.sin(2 * Math.PI * 95 * t)) * .07 + r * .04 + Math.sin(2 * Math.PI * 190 * t) * .05) * Math.min(1, t * 20) * Math.min(1, (2.3 - t) * 20));
+SND.dashOn = mkBuf(.2, t => Math.sin(2 * Math.PI * 1900 * t) * (t < .1 ? 1 : 0) * .25);
+SND.dashOff = mkBuf(.35, t => Math.sin(2 * Math.PI * (t < .12 ? 1900 : 1300) * t) * ((t < .1 || (t > .15 && t < .25)) ? 1 : 0) * .25);
+SND.dashHit = mkBuf(.15, (t, r) => (r * .6 + Math.sin(2 * Math.PI * 900 * t) * .4) * Math.exp(-t * 45));
+SND.slide = mkBuf(.9, (t, r) => (r * .1 + Math.sin(2 * Math.PI * 70 * t) * .05) * Math.sin(Math.PI * t / .9));
+
+// ---------- automatische Schiebetüren (Supermarkt, Schule, Tankstellen-Shop) ----------
+function updSlideDoors(dt) {
+  for (const s of slideDoors) {
+    let near = s.c.distanceToSquared(headWorld) < 3.4 * 3.4;
+    if (!near) for (const p of net.players.values()) if (p.root?.visible && p.root.position.distanceToSquared(s.c) < 3.4 * 3.4) { near = true; break; }
+    if (near !== s.open) { s.open = near; if (near) playAt(SND.slide, s.c, .6, 3); }
+    const k = s.k + clamp((near ? 1 : 0) - s.k, -dt * 1.6, dt * 2.2);
+    if (k === s.k) continue; s.k = k;
+    s.L.position.x = s.d0 + s.dw / 2 - k * s.dw * .92; s.R.position.x = s.d1 - s.dw / 2 + k * s.dw * .92;
+    for (const o of [s.L, s.R]) { o.updateMatrix(); o.updateMatrixWorld(true); }
+  }
+}
+
+// ---------- Türen: Klacken beim Öffnen, dumpfes Zuschlagen ----------
+function doorSound(st, a, obj, dt) {
+  if (!st.sOpen && a > .05) { st.sOpen = true; playAt(SND.doorOpen, obj.getWorldPosition(V()), .9, 3); }
+  else if (st.sOpen && a < .015) { st.sOpen = false; playAt(SND.doorClose, obj.getWorldPosition(V()), clamp(.45 + ((st.sA ?? a) - a) / Math.max(dt, .001) * .35, .45, 1.5), 4); }
+  st.sA = a;
+}
+
+// ---------- Dashcam: hängt an der Frontscheibe, Weitwinkel, wackelt bei Wellen, fliegt bei hartem Crash durchs Auto ----------
+const dashRT = new THREE.WebGLRenderTarget(512, 288); dashRT.texture.colorSpace = THREE.SRGBColorSpace;
+const dashGrabber = mkGrab(dashRT);
+const dash = { root: null, pivot: null, body: null, cam: null, led: null, btn: null, ch: null, sp: 0, sv: 0, rp: 0, rv: 0, loose: false, held: null,
+  vel: V(), spin: V(), bounds: null, rec: false, mr: null, chunks: [], can: null, g: null, dest: null, t0: 0, next: 0, scrT: 0 };
+function buildDashcam(ch, ws, eye, halfW, top) {
+  dashRemove();
+  // Platz: oben mittig an der Frontscheibe (hinter dem Innenspiegel), 3 cm vor dem Glas
+  let mount;
+  if (ws) {
+    ws.computeBoundingBox(); const b = ws.boundingBox;
+    mount = V(0, b.min.y, b.max.z).lerp(V(0, b.max.y, b.min.z), .86);
+    mount.addScaledVector(V(0, b.max.z - b.min.z, b.max.y - b.min.y).normalize(), -.035);
+  } else mount = V(0, eye.y + .2, eye.z + .62);
+  mount.x = -Math.sign(eye.x || 1) * .2;                              // neben dem Innenspiegel (Beifahrerseite)
+  const dark = M(0x16181b, { roughness: .45, metalness: .2 });
+  const root = new THREE.Group(); root.position.copy(mount); ch.add(root);
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(.03, .006, .03), dark); root.add(plate);
+  const stalk = new THREE.Mesh(new THREE.CylinderGeometry(.0055, .0055, .03, 8), dark); stalk.position.y = -.015; root.add(stalk);
+  const pivot = new THREE.Group(); pivot.position.y = -.03; root.add(pivot);
+  const body = new THREE.Group(); body.position.y = -.026; pivot.add(body);
+  body.add(new THREE.Mesh(new RoundedBoxGeometry(.075, .045, .034, 3, .008), dark));
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(.013, .015, .012, 20).rotateX(Math.PI / 2), M(0x050505, { roughness: .15, metalness: .6 })); lens.position.set(.012, 0, .022); body.add(lens);
+  const lg = new THREE.Mesh(new THREE.CircleGeometry(.0105, 20), M(0x0a1830, { roughness: .02, metalness: .9 })); lg.position.set(.012, 0, .0285); body.add(lg);
+  const [sc, sg] = C(128, 72), stex = new THREE.CanvasTexture(sc); stex.colorSpace = THREE.SRGBColorSpace;
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(.058, .033), new THREE.MeshBasicMaterial({ map: stex, toneMapped: false })); screen.position.set(0, 0, -.0175); screen.rotation.y = Math.PI; body.add(screen);
+  const btn = new THREE.Mesh(new THREE.CylinderGeometry(.0065, .0065, .006, 14), M(0xc0201a, { roughness: .4 })); btn.position.set(.024, .0245, -.004); body.add(btn);
+  const led = new THREE.Mesh(new THREE.SphereGeometry(.0028, 8, 6), new THREE.MeshBasicMaterial({ color: 0x330000 })); led.position.set(-.029, .013, -.0176); body.add(led);
+  const look = new THREE.Group(); look.position.set(.012, 0, .03); look.rotation.y = Math.PI; body.add(look);
+  const cam = new THREE.PerspectiveCamera(118, 16 / 9, .05, 450); cam.rotation.x = -.07; look.add(cam);
+  Object.assign(dash, { root, pivot, body, cam, led, btn, ch, sc, sg, stex, sp: 0, sv: 0, rp: 0, rv: 0, loose: false, held: null, scrT: 0,
+    bounds: { x: halfW * .75, y0: eye.y - .72, y1: top - .12, z0: eye.z - 1.3, z1: mount.z - .04 } });
+}
+function dashRemove() {
+  if (dash.rec) dashStop();
+  if (dash.held) { const h = dash.held; if (h.held?.type === 'dash') h.held = null; }
+  dash.body?.parent?.remove(dash.body); dash.root?.parent?.remove(dash.root);
+  Object.assign(dash, { root: null, pivot: null, body: null, cam: null, held: null, loose: false });
+}
+const dashMounted = () => !!dash.body && !dash.loose;
+function dashKick(s) { if (!dashMounted() || !(s > 0)) return; dash.sv -= s * 2.2; dash.rv += (Math.random() - .5) * s * 1.6; }
+function dashRoad(sp, dt) { if (!dashMounted() || sp < 1) return; const a = Math.min(1, sp / 30) * .05 * dt * 60; dash.sv += (Math.random() - .5) * a; dash.rv += (Math.random() - .5) * a * .5; }
+function dashMount(quiet) {
+  if (!dash.body) return;
+  if (dash.held?.held?.type === 'dash') dash.held.held = null;
+  dash.pivot.add(dash.body); dash.body.position.set(0, -.026, 0); dash.body.rotation.set(0, 0, 0);
+  Object.assign(dash, { loose: false, held: null, sp: 0, sv: 0, rp: 0, rv: 0 });
+  if (!quiet) { playAt(SND.click, dash.root.getWorldPosition(V()), .8, 2); msg('Dashcam wieder angebracht', 2); }
+}
+// harter Aufprall: Dashcam reißt ab und fliegt (im Auto) Richtung Aufprall, prallt ab, liegt dann irgendwo
+function dashFly(imp, p) {
+  if (!dash.body) return;
+  if (dash.held) return;
+  const ch = dash.ch; ch.updateMatrixWorld(true); dash.body.updateMatrixWorld(true);
+  if (!dash.loose) { ch.attach(dash.body); dash.loose = true; msg(xrOn() ? 'Die Dashcam ist abgerissen! Greifen und an die Scheibe halten' : 'Die Dashcam ist abgerissen! C = wieder anbringen', 3.5); }
+  const lp = ch.worldToLocal(p.clone()); lp.y = 0; if (lp.lengthSq() < .01) lp.set(0, 0, 1); lp.normalize();
+  dash.vel.copy(lp).multiplyScalar(Math.min(9, imp * .42)).add(V(rand(-1.5, 1.5), rand(1.8, 3.8), rand(-1, 1)));
+  dash.spin.set(rand(-16, 16), rand(-16, 16), rand(-16, 16));
+}
+function dashPhysics(dt) {
+  const B = dash.bounds, b = dash.body, v = dash.vel; if (!B) return;
+  v.y -= 9.8 * dt; v.z -= (pcar.sus?.a || 0) * dt * .8;                // Bremsen/Gasgeben schiebt sie herum
+  b.position.addScaledVector(v, dt);
+  b.rotation.x += dash.spin.x * dt; b.rotation.y += dash.spin.y * dt; b.rotation.z += dash.spin.z * dt;
+  let hit = 0;
+  const wall = (ax, lo, hi) => { const q = b.position[ax]; if (q < lo) { b.position[ax] = lo; if (v[ax] < 0) { hit = Math.max(hit, -v[ax]); v[ax] *= -.45; } } else if (q > hi) { b.position[ax] = hi; if (v[ax] > 0) { hit = Math.max(hit, v[ax]); v[ax] *= -.45; } } };
+  wall('x', -B.x, B.x); wall('y', B.y0, B.y1); wall('z', B.z0, B.z1);
+  if (b.position.y <= B.y0 + .002) {                                   // liegt: rutscht aus, hört auf zu drehen
+    const f = 1 - Math.min(1, dt * 6); v.x *= f; v.z *= f; dash.spin.multiplyScalar(1 - Math.min(1, dt * 5)); if (Math.abs(v.y) < .35) v.y = 0;
+  }
+  if (hit > .9) { dash.spin.multiplyScalar(.7); playAt(SND.dashHit, b.getWorldPosition(V()), Math.min(1, hit / 4), 2); }
+}
+function dashGrab(h, p) {
+  if (!dash.loose || dash.held || !dash.body) return false;
+  if (dash.body.getWorldPosition(v1).distanceTo(p) > .15) return false;
+  h.ctrl.attach(dash.body); dash.held = h; h.held = { type: 'dash' }; haptic(h, .4, 50); return true;
+}
+function dashRelease(h) {
+  if (dash.held !== h) return;
+  dash.held = null;
+  if (dash.body.getWorldPosition(v1).distanceTo(dash.root.getWorldPosition(v2)) < .22) { dashMount(); return; }
+  dash.ch.attach(dash.body); dash.vel.set(0, 0, 0); dash.spin.set(0, 0, 0);   // fallen lassen
+}
+// Knopf an der Dashcam (oder C am PC): Aufnahme starten / stoppen; abgerissen -> am PC wieder anbringen
+function dashButton() {
+  if (!dash.body) return;
+  if (dash.loose) { if (!xrOn()) dashMount(); return; }
+  if (dash.rec) dashStop(); else dashStart();
+}
+function dashStart() {
+  if (dash.rec || !dash.cam) return;
+  if (typeof MediaRecorder === 'undefined') { msg('Video-Aufnahme wird hier nicht unterstützt', 3); return; }
+  AC.resume();
+  const [c, g] = C(dashRT.width, dashRT.height); g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height); dash.can = c; dash.g = g;
+  dash.dest = AC.createMediaStreamDestination(); try { listener.getInput().connect(dash.dest); } catch (e) { }
+  const stream = new MediaStream([...c.captureStream(24).getVideoTracks(), ...dash.dest.stream.getAudioTracks()]);
+  const mime = ['video/mp4;codecs=avc1,mp4a', 'video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'].find(m => MediaRecorder.isTypeSupported?.(m)) || '';
+  let mr; try { mr = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 2000000 } : undefined); } catch (e) { msg('Aufnahme nicht möglich', 3); return; }
+  const chunks = [], t0 = time; dash.mr = mr;
+  mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+  mr.onstop = () => {
+    // Video geht ans Handy (Galerie) – wie bei echten Dashcams per WLAN
+    const type = mr.mimeType || 'video/webm', blob = new Blob(chunks, { type }), url = URL.createObjectURL(blob);
+    const [th, tg] = C(c.width, c.height); tg.drawImage(c, 0, 0);
+    const vid = document.createElement('video'); vid.src = url; vid.loop = true; vid.playsInline = true;
+    const len = Math.round(time - t0);
+    phone.gallery.push({ type: 'clip', url, blob, thumb: th, vid, ext: type.includes('mp4') ? 'mp4' : 'webm', len, dash: true });
+    phone.notif = { title: 'Dashcam', text: 'Video an dein Handy gesendet (' + len + ' s)', t0: time, until: time + 4 }; phone.drawT = 0;
+    msg('Dashcam-Video ist jetzt in deiner Handy-Galerie', 3);
+  };
+  mr.start(250); dash.rec = true; dash.t0 = time; dash.next = 0;
+  playAt(SND.dashOn, dash.body.getWorldPosition(V()), .8, 2); msg('Dashcam nimmt auf', 2);
+}
+function dashStop() {
+  if (!dash.rec) return; dash.rec = false;
+  try { dash.mr.stop(); } catch (e) { }
+  try { listener.getInput().disconnect(dash.dest); } catch (e) { }
+  if (dash.body) playAt(SND.dashOff, dash.body.getWorldPosition(V()), .8, 2);
+}
+// ein Bild der Dashcam: Szene rendern, asynchron auslesen, mit Datum/Uhrzeit/Tempo ins Video
+function renderDashcam() {
+  grabPoll(dashGrabber);
+  if (!dash.rec || !dash.cam || time < dash.next) return;
+  dash.next = time + 1 / (xrOn() ? 18 : 24);
+  grabRT(c => {
+    if (!dash.g) return; const g = dash.g, W = dash.can.width, H = dash.can.height;
+    g.drawImage(c, 0, 0);
+    const d = new Date(), p2 = n => String(n).padStart(2, '0');
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.fillRect(0, H - 22, W, 22);
+    g.font = '600 13px monospace'; g.textBaseline = 'middle'; g.textAlign = 'left'; g.fillStyle = '#fff';
+    g.fillText(`${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${d.getFullYear()}  ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`, 8, H - 11);
+    g.textAlign = 'right'; g.fillText(Math.round(Math.abs(pcar.speed) * 3.6) + ' km/h  ' + (net.name || ''), W - 8, H - 11);
+    if (Math.floor(time * 2) % 2) { g.fillStyle = '#ff2a2a'; g.beginPath(); g.arc(14, 14, 5, 0, 7); g.fill(); g.textAlign = 'left'; g.fillText('REC', 24, 14); }
+  }, dashGrabber);
+  const xr = renderer.xr.enabled; renderer.xr.enabled = false;
+  const prev = renderer.getRenderTarget(), su = renderer.shadowMap.autoUpdate; renderer.shadowMap.autoUpdate = false;
+  dash.cam.updateMatrixWorld(true);
+  try { renderer.setRenderTarget(dashRT); renderer.render(scene, dash.cam); grabIssue(dashGrabber); }
+  finally { renderer.setRenderTarget(prev); renderer.xr.enabled = xr; renderer.shadowMap.autoUpdate = su; }
+}
+function updDash(dt) {
+  if (!dash.body) return;
+  if (!dash.loose) {
+    // Feder: nickt erst hoch, dann runter und schwingt langsam aus – stärkere Stöße = stärkeres Wackeln
+    dash.sv += (-160 * dash.sp - 3.2 * dash.sv) * dt; dash.sp = clamp(dash.sp + dash.sv * dt, -.6, .6);
+    dash.rv += (-120 * dash.rp - 3 * dash.rv) * dt; dash.rp = clamp(dash.rp + dash.rv * dt, -.5, .5);
+    dash.pivot.rotation.set(dash.sp, 0, dash.rp);
+    // Knopf mit dem Finger (Controller-Spitze) drücken
+    if (xrOn()) for (const h of hands) {
+      const d = dash.btn.getWorldPosition(v1).distanceTo(h.ctrl.getWorldPosition(v2));
+      if (d < .035 && !h.dashPoke) { h.dashPoke = true; haptic(h, .5, 40); dashButton(); } else if (d > .07) h.dashPoke = false;
+    }
+  } else if (!dash.held) dashPhysics(dt);
+  dash.led.material.color.set(dash.rec ? (Math.floor(time * 2) % 2 ? 0xff1a1a : 0x550000) : 0x0a3a12);
+  dash.scrT -= dt;
+  if (dash.scrT <= 0 && headWorld.distanceTo(dash.root.getWorldPosition(v1)) < 3) {   // kleiner Bildschirm hinten: REC-Zeit oder "Bereit"
+    dash.scrT = .5; const g = dash.sg; g.fillStyle = '#05070a'; g.fillRect(0, 0, 128, 72); g.textAlign = 'center'; g.textBaseline = 'middle';
+    if (dash.rec) { const s = Math.floor(time - dash.t0); g.fillStyle = '#ff3030'; g.font = '700 20px system-ui'; g.fillText('● REC', 64, 26); g.fillStyle = '#fff'; g.font = '600 18px monospace'; g.fillText(Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'), 64, 52); }
+    else { g.fillStyle = '#9fd8ae'; g.font = '700 17px system-ui'; g.fillText('DASHCAM', 64, 26); g.fillStyle = '#aab'; g.font = '500 12px system-ui'; g.fillText(xrOn() ? 'roter Knopf = REC' : 'C = Aufnahme', 64, 50); }
+    dash.stex.needsUpdate = true;
+  }
+}
+
+// ---------- Fenster: X = runter, Y = hoch (deine Seite). 0 = zu, 1 = ganz offen ----------
+// Bei geschlossenem Fenster hört man draußen niemanden (und draußen hört dich keiner)
+function setWindow(t) {
+  if (player.inCar) { if (vehicle.type === 'scooter' || !pcar.doorGlass?.[0]) return; if (pcar.winT[0] === t) return; pcar.winT[0] = t; }
+  else if (player.ride) { if (player.ride.winT === t) return; player.ride.winT = t; }
+  else return;
+  playAt(SND.winMotor, headWorld, .45, 2); haptic(handBy('left'), .25, 60);
+}
+// Fensterscheibe(n) einer Tür senken
+function setGlass(list, v) { if (list) for (const g of list) g.m.position.y = g.y0 - g.drop * v; }
+function updWindows(dt) {
+  const c = pcar; if (!c.wins) return;
+  c.wins[0] += clamp(c.winT[0] - c.wins[0], -dt / 2.2, dt / 2.2);
+  // Mitfahrer in meinem Auto: deren Fenster
+  for (let i = 1; i < c.wins.length; i++) {
+    let t = 0; for (const o of net.players.values()) if (o.st?.rd && o.st.rd[0] === net.id && o.st.rd[1] === i) t = o.st.rw || 0;
+    c.wins[i] += clamp(t - c.wins[i], -dt / 2.2, dt / 2.2);
+  }
+  if (c.doorGlass) c.doorGlass.forEach((l, i) => setGlass(l, c.wins[i] || 0));
+  if (player.ride) { const r = player.ride; r.win = (r.win || 0) + clamp((r.winT || 0) - (r.win || 0), -dt / 2.2, dt / 2.2); }
+}
+// wie offen ist ein Auto (Fenster/Türen)? 1 = offen/kein Auto
+function carOpen(id) {
+  if (id === net.id) { if (vehicle.type === 'scooter') return 1; let o = 0; for (const v of pcar.wins || []) o = Math.max(o, v); for (const d of pcar.doors) if (d.a > .1) o = 1; return o; }
+  const p = net.players.get(id); if (!p || p.carType === 'scooter') return 1;
+  let o = 0; for (const v of p.winVal || []) o = Math.max(o, v || 0); for (const d of p.cmDoors || []) if ((d?.userData.a || 0) > .1) o = 1; return o;
+}
+const myCarId = () => player.inCar ? net.id : player.ride ? player.ride.id : 0;
+const carIdOf = p => p.st?.c ? p.id : p.st?.rd ? p.st.rd[0] : 0;
+function hearFactor(p) {
+  const a = myCarId(), b = carIdOf(p);
+  if (a && a === b) return 1;                                          // im selben Auto hört man sich immer
+  return (a ? carOpen(a) : 1) * (b ? carOpen(b) : 1);
+}
+const nearHolder = r => !!pcar.holder && pcar.holder.getWorldPosition(v1).distanceTo(headWorld) < r;
+
+// ---------- Unfallschäden: Dellen, kaputte Scheinwerfer/Rücklichter, Scheiben – das Auto brennt davon nicht ----------
+const geo0 = new WeakMap();                                           // Originalgeometrie (zum Reparieren)
+function dentMeshes(root, wp, wd, depth, R) {
+  root.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4(), lp = V(), ld = V();
+  root.traverse(o => {
+    if (!o.isMesh || o.userData.inner || o.userData.screen || !o.geometry?.attributes?.position || o.material?.colorWrite === false) return;
+    if (dash.body && (o.parent === dash.body || o.parent === dash.root || o.parent === dash.pivot)) return;
+    inv.copy(o.matrixWorld).invert(); lp.copy(wp).applyMatrix4(inv); ld.copy(wd).transformDirection(inv);
+    if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+    if (o.geometry.boundingBox.distanceToPoint(lp) > R) return;
+    if (!geo0.has(o)) { geo0.set(o, o.geometry); o.geometry = o.geometry.clone(); }   // eigene Kopie: andere Autos gleichen Typs bleiben heil
+    const pos = o.geometry.attributes.position, R2 = R * R; let hit = false;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i), dx = x - lp.x, dy = y - lp.y, dz = z - lp.z, d2 = dx * dx + dy * dy + dz * dz;
+      if (d2 > R2) continue;
+      const f = (1 - d2 / R2) ** 2, k = depth * f, n = (Math.sin(i * 12.9898 + x * 78.233) * 43758.5453 % 1) * .3 * k;   // ungleichmäßig zerknautscht
+      pos.setXYZ(i, x - ld.x * k + n * ld.z, y - ld.y * k - Math.abs(n) * .6, z - ld.z * k - n * ld.x); hit = true;
+    }
+    if (hit) { pos.needsUpdate = true; o.geometry.computeVertexNormals(); o.geometry.computeBoundingSphere(); }
+  });
+}
+// dent = { q: Punkt (Auto-Koordinaten), d: Richtung [x, z], s: Stärke 0..1 }; frame = Auto-Wurzel, root = Karosserie
+function applyDent(root, frame, dent) {
+  frame.updateMatrixWorld(true);
+  const wp = frame.localToWorld(V(dent.q[0], dent.q[1], dent.q[2])), wd = V(dent.d[0], 0, dent.d[1]).transformDirection(frame.matrixWorld);
+  dentMeshes(root, wp, wd, .04 + dent.s * .2, .4 + dent.s * .45);
+}
+function crackWindshield(c) {
+  if (c.crack || !c.rainFx) return;
+  const [cv, g] = C(512, 320), ox = rand(150, 360), oy = rand(90, 220);
+  g.strokeStyle = 'rgba(235,245,255,.85)'; g.lineWidth = 1.6; g.lineCap = 'round';
+  for (let i = 0; i < 18; i++) {                                       // Sternbruch: Strahlen mit Knicken + Ringe
+    let x = ox, y = oy, a = i / 18 * Math.PI * 2 + rand(-.15, .15); g.beginPath(); g.moveTo(x, y);
+    for (let s = 0; s < 7; s++) { a += rand(-.35, .35); const L = rand(14, 42); x += Math.cos(a) * L; y += Math.sin(a) * L; g.lineTo(x, y); }
+    g.stroke();
+  }
+  for (const r of [12, 26, 44]) { g.beginPath(); for (let k = 0; k <= 24; k++) { const a = k / 24 * Math.PI * 2, rr = r * rand(.8, 1.2); k ? g.lineTo(ox + Math.cos(a) * rr, oy + Math.sin(a) * rr) : g.moveTo(ox + Math.cos(a) * rr, oy + Math.sin(a) * rr); } g.stroke(); }
+  g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.arc(ox, oy, 6, 0, 7); g.fill();
+  const tex = new THREE.CanvasTexture(cv); tex.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(c.rainFx.mesh.geometry, new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false }));
+  m.renderOrder = 3; c.rainFx.mesh.parent.add(m); c.crack = m;
+}
+function breakDoorWindow(c, i, wp) {
+  const D = c.dmg; if (!c.doorGlass?.[i] || (D.wb >> i) & 1) return;
+  D.wb |= 1 << i; for (const g of c.doorGlass[i]) g.m.visible = false;
+  playAt(SND.glass, wp, 1, 4); spawnDebris(wp, 0x9fb7c4, 16, .05, 2.5);
+}
+function carDamage(c, imp, p) {
+  if (!c.chassis || c.chassis === c.vis || vehicle.type === 'scooter') return;
+  c.group.updateMatrixWorld(true);
+  const dir = c.group.worldToLocal(p.clone()); dir.y = 0; if (dir.lengthSq() < .01) dir.set(0, 0, 1); dir.normalize();   // vom Auto zur Aufprallstelle
+  const h = c.half, s = Math.min(Math.abs(h.x / (dir.x || 1e-6)), Math.abs(h.z / (dir.z || 1e-6)));
+  const q = V(dir.x * s, Math.min(.72, h.y * .48), dir.z * s), sev = clamp((imp - 8) / 24, 0, 1);
+  const dent = { q: [r2(q.x), r2(q.y), r2(q.z)], d: [r2(dir.x), r2(dir.z)], s: r2(sev) };
+  applyDent(c.chassis, c.group, dent);
+  c.dents ||= []; if (c.dents.length < 12) c.dents.push(dent);
+  const D = c.dmg || (c.dmg = { hl: 0, tl: 0, ws: 0, wb: 0, all: 0 }), wq = c.group.localToWorld(q.clone());
+  if (dir.z > .55 && sev > .08 && !D.hl) { D.hl = 1; if (c.headMat) { c.headMat.emissiveIntensity = 0; c.headMat.color.multiplyScalar(.35); } playAt(SND.glass, wq, .8, 4); spawnDebris(wq, 0xdfe8ee, 14, .05, 2.5); msg('Scheinwerfer kaputt', 2); }
+  if (dir.z < -.55 && sev > .08 && !D.tl) { D.tl = 1; if (c.brakeMat) { c.brakeMat.emissiveIntensity = 0; c.brakeMat.color.multiplyScalar(.4); } playAt(SND.glass, wq, .7, 4); spawnDebris(wq, 0xb01010, 10, .05, 2.5); }
+  if (dir.z > .4 && sev > .3 && !D.ws) { D.ws = 1; crackWindshield(c); playAt(SND.glass, wq, 1, 4); }
+  if (Math.abs(dir.x) > .5 && sev > .25) { const i = c.doors.findIndex(d => d.front && d.side === Math.sign(dir.x)); if (i >= 0) breakDoorWindow(c, i, wq); }
+  if (sev > .85 && !D.all) { D.all = 1; glassNet(c, wq); playAt(SND.glass, wq, 1.4, 5); }   // sehr harter Crash: alle Scheiben weg
+}
+function repairCar(c) {
+  if (c.chassis) c.chassis.traverse(o => { if (o.isMesh && geo0.has(o)) { o.geometry.dispose(); o.geometry = geo0.get(o); geo0.delete(o); } });
+  if (c.headMat && c.headCol) { c.headMat.color.copy(c.headCol); c.headMat.emissiveIntensity = 1.2; }
+  if (c.brakeMat && c.brakeCol) { c.brakeMat.color.copy(c.brakeCol); c.brakeMat.emissiveIntensity = .5; }
+  if (c.crack) { c.crack.parent?.remove(c.crack); c.crack.material.map.dispose(); c.crack.material.dispose(); c.crack = null; }
+  if (c.doorGlass) for (const l of c.doorGlass) for (const g of l) g.m.visible = true;
+  if (c.glassMat) c.glassMat.visible = true;
+  c.dmg = null; c.dents = [];
+  if (dash.loose) dashMount(true);
+}
+// Schäden am Auto eines anderen Spielers anzeigen (Bitmaske aus seinem Zustand)
+function applyRemoteDamage(p, dm) {
+  const full = p.carMesh?.isLOD ? p.carMesh.levels[0].object : p.carMesh; if (!full) return;
+  const meta = vehicleMeta[p.carType] || {};
+  full.traverse(o => {
+    if (!o.isMesh) return;
+    for (const m of [].concat(o.material)) {
+      if (meta.headName && m.name === meta.headName && m.emissive) m.emissiveIntensity = dm & 1 ? 0 : 1.2;
+      if (meta.brakeName && m.name === meta.brakeName && m.emissive) m.emissiveIntensity = dm & 2 ? 0 : .5;
+      if (m.userData.glass) m.visible = !(dm & 8);
+    }
+  });
+  (p.cmWins || []).forEach((l, i) => { if (l) for (const g of l) g.m.visible = !((dm >> 4) >> i & 1); });
 }
 
 function placeCityCar(c, dt) {
@@ -2674,8 +3288,10 @@ function tryGrab(h) {
   if (player.inCar) {
     const l = pcar.wheelBase.worldToLocal(p.clone()), r = Math.hypot(l.x, l.y);
     if (Math.abs(r - pcar.wheelR) < .11 && Math.abs(l.z) < .15) { h.held = { type: 'wheel', last: Math.atan2(l.y, l.x) }; haptic(h, .3, 40); return; }
-    if (phone.where === 'holder' && phoneG.getWorldPosition(v1).distanceTo(p) < .15) { setPhone('hand'); phone.cool = time + 1.5; return; }
   }
+  // Handy vom Magneten nehmen (auch von außen durch die offene Tür / das Fenster)
+  if (phone.where === 'holder' && phoneG.getWorldPosition(v1).distanceTo(p) < .15) { setPhone('hand'); phone.cool = time + 1.5; return; }
+  if (dashGrab(h, p)) return;                                            // heruntergefallene Dashcam aufheben
   let best = null, bd = .25;
   for (const t of TOOLS) { if (t.heldBy) continue; const d = t.obj.getWorldPosition(v1).distanceTo(p); if (d < bd) { bd = d; best = t; } }
   if (best) return holdTool(best, h);
@@ -2701,6 +3317,7 @@ function release(h) {
   const x = h.held; if (!x) return;
   if (x.type === 'tool') holster(x.t);
   if (x.type === 'door') x.d.grab = null;
+  if (x.type === 'dash') dashRelease(h);
   h.held = null;
 }
 
@@ -2734,9 +3351,15 @@ function vrInput(dt) {
     if (canEnter()) enterCar();
     else if (ride && !(phone.where === 'hand')) startRide(ride);
     else if (phone.where === 'pocket') setPhone('hand');
-    else if (phone.where === 'holder') { setPhone('hand'); phone.cool = time + 1.5; }
+    else if (phone.where === 'holder') {
+      if (player.inCar || nearHolder(2.2)) { setPhone('hand'); phone.cool = time + 1.5; }
+      else msg('Dein Handy hängt noch im Auto am Magneten', 2.5);
+    }
     else setPhone('pocket');
   }
+  // linker Controller: X = Fenster runter, Y = Fenster hoch (deine Tür)
+  if (L?.down[4] && seated()) setWindow(1);
+  if (L?.down[5] && seated()) setWindow(0);
   if (Rh?.down[5] && player.inCar) exitCar();
   else if (Rh?.down[5] && player.ride) leaveRide();
   if (Rh?.down[3] && seated()) player.calib.copy(camera.position);
@@ -2802,8 +3425,14 @@ addEventListener('keydown', e => {
       else if (own < 5) { if (pcar.doors[0]) pcar.doors[0].a = .8; enterCar(); }
     }
   }
-  if (e.code === 'KeyP') { if (phone.where === 'pocket') { setPhone('hand'); document.exitPointerLock(); } else { setPhone('pocket'); lockMouse(); } }
+  if (e.code === 'KeyP') {
+    if (phone.where === 'holder' && !player.inCar && !nearHolder(3)) msg('Dein Handy hängt noch im Auto am Magneten', 2.5);
+    else if (phone.where !== 'hand') { setPhone('hand'); document.exitPointerLock(); } else { setPhone('pocket'); lockMouse(); }
+  }
   if (e.code === 'KeyH' && player.inCar) setPhone(phone.where === 'holder' ? 'hand' : 'holder');
+  if (e.code === 'KeyC' && player.inCar) dashButton();                  // Dashcam: Aufnahme starten/stoppen (bzw. wieder anbringen)
+  if ((e.key === 'x' || e.key === 'X') && seated()) setWindow(1);         // Fenster runter
+  if ((e.key === 'y' || e.key === 'Y') && seated()) setWindow(0);         // Fenster hoch
 });
 addEventListener('keyup', e => { desk.keys[e.code] = false; });
 addEventListener('mousemove', e => {
@@ -3450,6 +4079,12 @@ function myState() {
   } else if (carBoot) st.pk = [r2(gp.x), r2(gp.y), r2(gp.z), r3(c.heading), vehicle.id];   // geparktes Auto sehen die anderen auch
   if (c.doors.some(d => d.a > .01)) st.da = c.doors.map(d => r2(d.a));
   if (player.ride) st.rd = [player.ride.id, player.ride.seat];
+  if (c.wins?.[0] > .01) st.wd = r2(c.wins[0]);                       // mein Fahrerfenster
+  if (player.ride?.win > .01) st.rw = r2(player.ride.win);              // mein Fenster als Mitfahrer
+  if (c.dmg) { const D = c.dmg; st.dm = (D.hl ? 1 : 0) | (D.tl ? 2 : 0) | (D.ws ? 4 : 0) | (D.all ? 8 : 0) | (D.wb << 4); }
+  if (c.dents?.length) st.dl = c.dents.flatMap(d => [...d.q, ...d.d, d.s]);
+  // CarPlay des Fahrers, damit Mitfahrer dasselbe auf den Displays sehen
+  if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0 };
   st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
   if (alarm.on) st.al = 1;                                              // Auto-Alarm (Licht + Hupe bei allen)
   // Im Auto: Kopf, Hände und Handy relativ zum Auto senden -> bei Tempo hängt nichts hinterher
@@ -3487,7 +4122,12 @@ function updNet(dt) {
   if (net.players.size && amHost()) { npcT -= dt; if (npcT <= 0) { npcT = .12; netSend(npcPacket()); } }
   sendScreen(dt);
   const k = Math.min(1, dt * 12);
-  for (const p of net.players.values()) updAvatar(p, dt, k);
+  for (const p of net.players.values()) {
+    updAvatar(p, dt, k);
+    // Stimme: Fenster zu = draußen hört man nichts (im selben Auto immer); im Telefonat nicht dämpfen
+    if (p.pa && !(phone.call?.id === p.id && phone.call.state === 'active')) { const f = hearFactor(p); if (Math.abs(f - (p.hf ?? 1)) > .02) { p.hf = f; p.pa.setVolume(2 * f); } }
+  }
+  updRideScreens(dt);
 }
 
 // ---------- Mitfahren: in das Auto eines anderen Spielers einsteigen ----------
@@ -3593,7 +4233,7 @@ function carSnap(p, m) {
 const herm = (p0, v0, p1, v1, s, T) => { const s2 = s * s, s3 = s2 * s; return (2 * s3 - 3 * s2 + 1) * p0 + (s3 - 2 * s2 + s) * T * v0 + (-2 * s3 + 3 * s2) * p1 + (s3 - s2) * T * v1; };
 // Fahrzustand zur Zeit rt: [x, z, yaw, Luft, Nicken, Rollen, Kar.-Nicken, Kar.-Rollen, Kar.-Höhe, Tempo vorwärts]
 function carAt(p, rt) {
-  const b = p.cbuf, air = c => Math.max(0, c[1] - groundAt(c[0], c[2])), fv = c => (c[10] || 0) * Math.sin(c[3]) + (c[11] || 0) * Math.cos(c[3]);
+  const b = p.cbuf, air = c => Math.max(0, c[1] - surfaceAt(c[0], c[2])), fv = c => (c[10] || 0) * Math.sin(c[3]) + (c[11] || 0) * Math.cos(c[3]);
   let i = b.length - 1; while (i > 0 && b[i].tm > rt) i--;
   const A = b[i], B = b[i + 1];
   if (!B || rt < A.tm) {                                             // nichts Neueres da: kurz mit Tempo weiterrechnen
@@ -3618,7 +4258,9 @@ function updRemoteCar(p, dt) {
     p.cmCh = cm.getObjectByName('chassis'); p.cmWheels = []; p.cmDoors = []; p.cmScreens = [];
     cm.traverse(o => { if (o.name === 'wheel') p.cmWheels.push(o); if (/^door\d$/.test(o.name)) p.cmDoors[+o.name[4]] = o; if (o.isMesh && o.userData.screen) p.cmScreens.push({ m: o, orig: o.material }); });
     p.cmHandles = p.cmDoors.map(pv => pv?.getObjectByName('handle') || null);   // echte Türgriffe zum Einsteigen
-    p.alarmOn = false;
+    p.cmWins = p.cmDoors.map((pv, i) => { const l = []; pv?.children.forEach(o => { if (o.isMesh && o.userData.win === i) l.push({ m: o, y0: o.position.y, drop: o.userData.drop }); }); return l.length ? l : null; });
+    p.winVal = p.cmDoors.map(() => 0);
+    p.alarmOn = false; p.dentN = 0; p.dmSeen = 0;
   }
   const cm = p.carMesh;
   cm.visible = true;
@@ -3630,7 +4272,7 @@ function updRemoteCar(p, dt) {
     p.crt = performance.now() / 1000 - p.off - CAR_DELAY; k = carAt(p, p.crt);
   }
   p.cyaw = k[2];
-  cm.position.set(k[0], groundAt(k[0], k[1]) + k[3], k[1]);
+  cm.position.set(k[0], surfaceAt(k[0], k[1]) + k[3], k[1]);
   cm.rotation.set(k[4], k[2], k[5], 'YXZ');
   // Stoßdämpfer: Karosserie federt wie beim Fahrer (wer drin sitzt, sieht es nur dezent)
   if (p.cmCh) { const f = player.ride?.id === p.id ? .35 : 1; p.cmCh.rotation.x = k[6] * f; p.cmCh.rotation.z = k[7] * f; p.cmCh.position.y = k[8] * f; }
@@ -3645,6 +4287,22 @@ function updRemoteCar(p, dt) {
     if (p.dp?.[i] > 0) { p.dp[i] -= dt; if (p.dp[i] > .7) tgt = Math.max(tgt, .9); }
     pv.userData.a = (pv.userData.a || 0) + (tgt - (pv.userData.a || 0)) * Math.min(1, dt * 6);
     pv.rotation.y = -pv.userData.side * pv.userData.a;
+    doorSound(pv.userData, pv.userData.a, pv, dt);                      // Tür auf: Klacken, zu: dumpfer Schlag
+  }
+  // Fenster: Fahrer (wd), Mitfahrer (rw) – mein eigener Sitz sofort aus meiner Eingabe
+  for (let i = 0; i < p.winVal.length; i++) {
+    let t = i === 0 ? (s.wd || 0) : 0;
+    if (i > 0) for (const o of net.players.values()) if (o.st?.rd && o.st.rd[0] === p.id && o.st.rd[1] === i) t = o.st.rw || 0;
+    if (player.ride?.id === p.id && player.ride.seat === i) t = player.ride.win || 0;
+    p.winVal[i] += clamp(t - p.winVal[i], -dt / 2.2, dt / 2.2);
+    setGlass(p.cmWins[i], p.winVal[i]);
+  }
+  // Unfallschäden des Besitzers: Dellen (Liste), Lichter/Scheiben (Bitmaske); repariert -> Auto neu aufbauen
+  const dl = s.dl || [], nd = dl.length / 6, dm = s.dm || 0;
+  if (nd < p.dentN || (dm === 0 && p.dmSeen)) { p.carQ = -1; }
+  else {
+    if (nd > p.dentN) { const full = cm.isLOD ? cm.levels[0].object : cm, root = full.getObjectByName('chassis') || full; for (let i = p.dentN; i < nd; i++) applyDent(root, cm, { q: dl.slice(i * 6, i * 6 + 3), d: dl.slice(i * 6 + 3, i * 6 + 5), s: dl[i * 6 + 5] }); p.dentN = nd; }
+    if (dm !== p.dmSeen) { applyRemoteDamage(p, dm); p.dmSeen = dm; }
   }
   // Auto-Alarm des Besitzers: Licht + Blinker blinken, Hupe piept, Displays zeigen "!"
   const al = !!s.al;
@@ -3678,7 +4336,7 @@ function updAvatar(p, dt, k, self = false) {
   const ox = r.position.x, oz = r.position.z;
   const back = V(0, 0, 1).applyAxisAngle(UP, yaw).multiplyScalar(self ? .17 : .08);   // eigener Körper etwas hinter der Kamera (kein Blick in den Hals)
   // Körper folgt dem Kopf: beim Ducken/Hocken wird er gestaucht statt dass der Kopf in den Körper rutscht
-  const gnd = groundAt(p.hp.x, p.hp.z), headH = p.hp.y - gnd;
+  const gnd = surfaceAt(p.hp.x, p.hp.z), headH = p.hp.y - gnd;
   r.position.set(p.hp.x + back.x, Math.max(gnd, p.hp.y - 1.62), p.hp.z + back.z);
   r.scale.y = inCar ? 1 : clamp(headH / 1.62, .45, 1.08);
   r.rotation.set(s.d ? -Math.PI / 2 : 0, yaw + Math.PI, 0, 'YXZ');
@@ -3836,6 +4494,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   c.bodyMat = new THREE.MeshPhysicalMaterial({ color: paint?.color && !paint.map ? paint.color.getHex() : 0x3a3f46, metalness: .6, roughness: .28, clearcoat: 1, clearcoatRoughness: .03, side: THREE.DoubleSide });   // Originalfarbe des Modells; beidseitig: keine Löcher an Kanten
   c.fl.mats[0] = c.bodyMat; c.fl.orig[0] = c.bodyMat.color.clone();
   c.glassMat = new THREE.MeshStandardMaterial({ color: 0x18202a, metalness: .9, roughness: .05, transparent: true, opacity: .45 });
+  c.glassMat.userData.glass = true;                                    // (zum Wiederfinden in Kopien für andere Spieler)
   // Räder als Gruppen: lenken, drehen, federn (Teile über beide Seiten, z.B. hintere Bremse, werden geteilt)
   const wheels = {}, pieces = [];
   for (const p of wheelParts) {
@@ -3990,6 +4649,15 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   };
   mergeIn(ch); mergeIn(ws); doors.forEach(d => mergeIn(d.pivot, true));
   for (const w of Object.values(wheels)) { mergeIn(w.steer); mergeIn(w.spin); }
+  // Fensterscheiben in den Türen (zum Runterlassen): fahren um ihre eigene Höhe in die Tür
+  const doorGlass = doors.map((d, i) => {
+    const l = [];
+    for (const o of d.pivot.children) if (o.isMesh && o.material === c.glassMat) {
+      o.geometry.computeBoundingBox(); const bb = o.geometry.boundingBox;
+      o.userData.win = i; o.userData.drop = (bb.max.y - bb.min.y) * .92; l.push({ m: o, y0: o.position.y, drop: o.userData.drop });
+    }
+    return l.length ? l : null;
+  });
   // Innenraum heller: dunkle Materialien bekommen mehr Umgebungslicht vom Himmel (sonst sieht man in VR drinnen kaum etwas)
   const litM = new Set();
   vis.traverse(o => { if (!o.isMesh || !o.userData.inner) return; for (const m of [].concat(o.material)) if (m.isMeshStandardMaterial && m !== c.bodyMat && m !== c.glassMat && !litM.has(m)) { litM.add(m); m.envMapIntensity = 2.6; liftMat(m); } });
@@ -4009,7 +4677,11 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   const uvBounds = m => { const a = m.geometry.attributes.uv; if (!a) return null; let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9; for (let i = 0; i < a.count; i++) { u0 = Math.min(u0, a.getX(i)); u1 = Math.max(u1, a.getX(i)); v0 = Math.min(v0, a.getY(i)); v1 = Math.max(v1, a.getY(i)); } return u1 - u0 > .05 && v1 - v0 > .05 ? { u0, u1, v0, v1 } : null; };
   c.screenUV = uvBounds(c.screen); c.screenOrig = c.screen.material;
   c.clusterUV = c.cluster ? uvBounds(c.cluster) : null; c.clusterOrig = c.cluster ? c.cluster.material : null;
-  vehicleMeta[id] = { seats, half: V(halfW, top, bb.max.z), paint: c.bodyMat.color.getHex() };
+  // markieren, damit Mitfahrer in der Kopie die Displays finden (zeigen dann CarPlay + Tacho des Fahrers)
+  Object.assign(c.screen.userData, { main: true, uvb: c.screenUV });
+  if (c.cluster) Object.assign(c.cluster.userData, { cluster: true, uvb: c.clusterUV });
+  c.headCol = c.headMat?.color.clone(); c.brakeCol = c.brakeMat?.color.clone();
+  vehicleMeta[id] = { seats, half: V(halfW, top, bb.max.z), paint: c.bodyMat.color.getHex(), headName: c.headMat?.name, brakeName: c.brakeMat?.name };
   vehicleCache[id] = carClone(vis);
   vehicleCache[id].traverse(o => { if (o.isMesh && o.userData.inner) [].concat(o.material).forEach(liftMat); });   // Mitfahrer sehen auch etwas
   // dasselbe Auto grob vereinfacht, für andere Spieler aus der Ferne: Lack | Teile mit ihrer Farbe | Glas
@@ -4027,7 +4699,9 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     vehicleFar[id] = mergeGeometries(cats.map(l => l.length ? mergeGeometries(l) : empty()), true);
   }
   if (!own) { console.log('Auto für andere Spieler geladen:', id); return; }
-  buildRainFx(c, wsGeo, ch, eye);                                    // Regentropfen + Scheibenwischer (nur am eigenen Auto)
+  buildRainFx(c, wsGeo, ch, eye);
+  buildDashcam(ch, wsGeo, eye, halfW, top);                            // Dashcam an der Frontscheibe
+  Object.assign(c, { doorGlass, wins: doors.map(() => 0), winT: doors.map(() => 0), dmg: null, dents: [], crack: null });                                   // Regentropfen + Scheibenwischer (nur am eigenen Auto)
   c.group.remove(c.vis); c.vis = vis; c.chassis = ch; c.group.add(vis);
   const dz = drv.box.getCenter(V()).z;
   Object.assign(c, {
@@ -4193,6 +4867,7 @@ function buildFacadeMesh(atlas) {
       for (let f = 0; f < s.F; f++) for (let i = 0; i < bays; i++) {
         const p = p0.clone().addScaledVector(r, i * bw).setY(f * 3);
         let row = midRow, ci = Math.random() < .12 ? 3 : midCol, h = 3;
+        if (f === 0 && s.door && isFront && i === Math.floor(bays / 2)) continue;   // echte Tür: hier ist ein Loch (Eingang)
         if (f === 0) { row = 0; ci = isFront && i === Math.floor(bays / 2) ? 0 : s.shops && isFront ? 1 : (midCol === 1 ? 3 : 2); }
         else if (f === s.F - 1 && !s.house) { row = 3; ci = midCol; h = 3.75; }
         quad(p, r, h, bw, row, ci, s.tint, shadeF);
@@ -4325,7 +5000,7 @@ function frame() {
   if (seated() && player.recalT && time > player.recalT) { player.recalT = 0; player.calib.x = camera.position.x; player.calib.z = camera.position.z; msg('Sitz eingestellt (Stick drücken = neu einstellen)', 2); }
   updPlayerCar(dt);
   if (player.inCar) seatPlayer();
-  else if (!player.ride) { const gy = groundAt(headWorld.x, headWorld.z) + player.hOff; dolly.position.y += (gy - dolly.position.y) * Math.min(1, dt * 12); }   // Mitfahrer: Sitz wird in updNet gesetzt
+  else if (!player.ride) { const gy = surfaceAt(headWorld.x, headWorld.z) + player.hOff; dolly.position.y += (gy - dolly.position.y) * Math.min(1, dt * 12); }   // Mitfahrer: Sitz wird in updNet gesetzt
   camera.getWorldPosition(headWorld);   // Kopfposition nach der Bewegung in diesem Bild aktualisieren
   // VR: Handy in der Hand dreht den Bildschirm zu den Augen -> kein Kopf-Runterbeugen,
   // und die Rückkamera filmt genau das, was hinter dem Handy liegt (wohin du schaust)
@@ -4358,6 +5033,8 @@ function frame() {
   } else vignette.visible = false;
   mark('cull');
   fireBig.update(dt, 1.2); fireSmall.update(dt, .5); smoke.update(dt, .3); updDebris(dt); updNpcEngines(dt);
+  if (burning.some(f => f.tower)) towerFxT = 15;                      // nach dem Löschen noch ausklingen lassen
+  if (towerFxT > 0) { towerFxT -= dt; fireHuge.update(dt, 2.5); smokeHuge.update(dt, .6); }
   mark('particles');
   updAlarm(dt); updPhone(dt); updCarPlay(dt); updRainFx(dt);
   mark('phone');
@@ -4379,9 +5056,9 @@ function frame() {
   tracerT -= dt; tracer.visible = tracerT > 0;
   sky.position.copy(headWorld);
   mark('misc');
-  updHolderShake(dt); updSelf(dt);
+  updHolderShake(dt); updSelf(dt); updDash(dt); updSlideDoors(dt);
   mark('self');
-  renderPhoneCam();
+  renderPhoneCam(); renderDashcam();
   mark('phoneCam');
 }
-window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift };
+window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide };
