@@ -1639,16 +1639,17 @@ function drawApp() {
     // Admin Panel (nur Gabriel): Ereignisse für alle Spieler auslösen
     rr(g, 0, 60, PW, 96, 0, '#5c0010'); tx(g, 'Admin Panel', 24, 96, 32, '#fff', 'left', 800); tx(g, 'Gilt für alle Spieler auf dem Server', 24, 130, 14, '#ffb3b3', 'left', 500);
     const T = disaster.tornado, S = disaster.tsunami;
-    [['tornado', 'Tornado starten', T ? 'läuft gerade …' : 'zieht durch die Stadt', '#6b4e16'],
-     ['wave', 'Tsunami starten', S ? 'läuft gerade …' : 'Riesenwelle + Überschwemmung', '#0d4f6b'],
-     ['vil', 'NPC-Angriff starten', vil.ped ? 'läuft gerade …' : 'ein NPC schießt auf andere', '#8e1b1b'],
-     ['fire', 'Gebäude anzünden', 'ein Haus in der Nähe brennt', '#b34700'],
-     ['rain', weather.target ? 'Regen ausschalten' : 'Regen einschalten', weather.target ? 'es regnet gerade' : 'es ist gerade trocken', '#2b5d9b'],
-     ['stop', 'Alles stoppen', 'Tornado, Tsunami, Angriff beenden', '#444a55']].forEach(([id, n, sub, c], i) => {
-      const y = 172 + i * 86, act = { tornado: 'tornado', wave: 'tsunami', vil: 'vil', fire: 'fire', rain: 'rain', stop: 'stop' }[id];
-      rr(g, 14, y, PW - 28, 76, 16, c); g.beginPath(); g.arc(52, y + 38, 26, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, id, 52, y + 38, .8);
-      tx(g, n, 92, y + 28, 19, '#fff', 'left', 800); tx(g, sub, 92, y + 54, 13, 'rgba(255,255,255,.75)', 'left', 500);
-      btn(14, y, PW - 28, 76, 'adm:' + act);
+    [['tornado', 'tornado', 'Tornado starten', T ? 'läuft gerade …' : 'zieht durch die Stadt', '#6b4e16'],
+     ['tornado', 'tornado5', 'EF5-Tornado (stärkster)', 'saugt Spieler + Autos ein, wirft sie hoch', '#5c0010'],
+     ['wave', 'tsunami', 'Tsunami starten', S ? 'läuft gerade …' : 'Riesenwelle + Überschwemmung', '#0d4f6b'],
+     ['vil', 'vil', 'NPC-Angriff starten', vil.ped ? 'läuft gerade …' : 'ein NPC schießt auf andere', '#8e1b1b'],
+     ['fire', 'fire', 'Gebäude anzünden', 'ein Haus in der Nähe brennt', '#b34700'],
+     ['rain', 'rain', weather.target ? 'Regen ausschalten' : 'Regen einschalten', weather.target ? 'es regnet gerade' : 'es ist gerade trocken', '#2b5d9b'],
+     ['stop', 'stop', 'Alles stoppen', 'Tornado, Tsunami, Angriff beenden', '#444a55']].forEach(([ic, act, n, sub, c], i) => {
+      const y = 166 + i * 80;
+      rr(g, 14, y, PW - 28, 72, 16, c); g.beginPath(); g.arc(50, y + 36, 24, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, ic, 50, y + 36, .75);
+      tx(g, n, 88, y + 26, 18, '#fff', 'left', 800); tx(g, sub, 88, y + 50, 12, 'rgba(255,255,255,.75)', 'left', 500);
+      btn(14, y, PW - 28, 72, 'adm:' + act);
     });
   } else if (a === 'mis') {
     tx(g, 'Missionen', 24, 100, 34, '#fff', 'left', 700); tx(g, 'Konto: ' + money + ' €', 24, 132, 16, '#9f9', 'left');
@@ -2711,6 +2712,7 @@ function updPlayerCar(dt) {
   }
   // Lenkrad dreht in die gleiche Richtung wie deine Hände
   if (!sc) { c.wheelSpin.rotation.z = c.spin; if (c.brakeMat) c.brakeMat.emissiveIntensity = c.dmg?.tl ? 0 : brk > .05 ? 4 : .5; }
+  if (c.fly) { carFlight(c, dt); return; }                              // vom EF5-Tornado erfasst
   const inAir = !!c.air;
   if (inAir) { thr = 0; brk = 0; }   // in der Luft greifen die Räder nicht
   const maxV = sc ? 7 : 62, acc = sc ? 3.2 : 7.5;
@@ -2751,6 +2753,7 @@ function updPlayerCar(dt) {
       const impact = Math.max(0, gvy - c.vy);
       g.position.y = gy; c.air = false; c.vy = gvy;
       if (impact > 2.5) { crash(impact * 1.8, null); const S = c.sus || (c.sus = {}); S.hv = (S.hv || 0) - impact * .05; }
+      if (impact > 12) carDamage(c, impact + 6, g.localToWorld(V(0, 0, 3)));   // sehr harte Landung (z.B. aus dem Tornado): Front eingedrückt
       dashKick(Math.min(1.6, impact * .09));                       // Landung: Dashcam nickt kräftig nach
     }
   }
@@ -3400,7 +3403,7 @@ function vrInput(dt) {
   if (Rh?.down[5] && player.inCar) exitCar();
   else if (Rh?.down[5] && player.ride) leaveRide();
   if (Rh?.down[3] && seated()) player.calib.copy(camera.position);
-  if (!seated() && L?.gp) {
+  if (!seated() && !player.fly && L?.gp) {
     let mx = L.gp.axes[2] || 0, mz = L.gp.axes[3] || 0;
     if (Math.hypot(mx, mz) < .15) mx = mz = 0;
     walk(mx, mz, L.now[3] ? 6 : 3, dt);
@@ -3511,7 +3514,7 @@ function deskUse(click) {
 }
 function deskTick(dt) {
   camera.rotation.set(desk.pitch, desk.yaw, 0);
-  if (!seated()) {
+  if (!seated() && !player.fly) {
     const mx = (desk.keys.KeyD ? 1 : 0) - (desk.keys.KeyA ? 1 : 0), mz = (desk.keys.KeyS ? 1 : 0) - (desk.keys.KeyW ? 1 : 0);
     if (mx || mz) walk(mx, mz, desk.keys.ShiftLeft ? 7 : 3.5, dt);
   }
@@ -3902,18 +3905,19 @@ function buildTornado() {
   return { grp, outer, inner, tex, snd };
 }
 let tornadoFx = null;
-function makeTornadoEv() {
-  const a = rand(0, Math.PI * 2), c = headWorld, x = c.x + Math.cos(a) * 260, z = c.z + Math.sin(a) * 260;
-  const tx = c.x + rand(-25, 25), tz = c.z + rand(-25, 25), l = Math.hypot(tx - x, tz - z);
-  return { x: r2(x), z: r2(z), dx: r2((tx - x) / l), dz: r2((tz - z) / l), len: 520, sp: 7.5, seed: r2(rand(0, 9)) };
+// ef = 5: der stärkste Tornado (EF5) – riesig, saugt Spieler und ihre Autos ein, wirbelt sie hoch und schleudert sie weg
+function makeTornadoEv(ef = 0, c = headWorld) {
+  const d = ef ? 300 : 260, a = rand(0, Math.PI * 2), x = c.x + Math.cos(a) * d, z = c.z + Math.sin(a) * d;
+  const tx = c.x + rand(-20, 20), tz = c.z + rand(-20, 20), l = Math.hypot(tx - x, tz - z);
+  return { x: r2(x), z: r2(z), dx: r2((tx - x) / l), dz: r2((tz - z) / l), len: ef ? 760 : 520, sp: ef ? 6.5 : 7.5, seed: r2(rand(0, 9)), ef };
 }
 function startTornado(ev) {
   tornadoFx ||= buildTornado();
   disaster.tornado = { ...ev, t: 0, hitCar: false, hitPark: false };
   tornadoFx.grp.visible = true;
   if (AC.state === 'running' && !tornadoFx.snd.isPlaying) tornadoFx.snd.play();
-  carAlert('Tornado-Warnung!', 'Ein Tornado zieht durch Stuttgart. Geh in ein Gebäude und halte dich fern!', '#6b4e16', 'Tornado');
-  msg('TORNADO! Geh in Deckung!', 5);
+  if (ev.ef) { carAlert('EF5-TORNADO!', 'Der stärkste Tornado zieht durch Stuttgart und saugt alles ein – auch Menschen und Autos. Sofort in Deckung!', '#5c0010', 'EF5-Tornado'); msg('EF5-TORNADO! Er saugt alles ein – lauf!', 6); }
+  else { carAlert('Tornado-Warnung!', 'Ein Tornado zieht durch Stuttgart. Geh in ein Gebäude und halte dich fern!', '#6b4e16', 'Tornado'); msg('TORNADO! Geh in Deckung!', 5); }
   if (weather.target === 0) weather.target = 1;                           // dazu kommt ein Unwetter
 }
 function endTornado() {
@@ -3925,19 +3929,32 @@ function updTornado(dt) {
   T.t += dt; const dur = T.len / T.sp; if (T.t > dur) return endTornado();
   const s = T.t * T.sp, wob = Math.sin(T.t * .35 + T.seed) * 18;
   const x = T.x + T.dx * s - T.dz * wob, z = T.z + T.dz * s + T.dx * wob, gy = groundAt(x, z);
-  const k = Math.min(1, T.t / 4, (dur - T.t) / 4), F = tornadoFx;
-  F.grp.position.set(x, gy, z); F.grp.scale.set(.2 + .8 * k, .3 + .7 * k, .2 + .8 * k);
-  F.outer.rotation.y += dt * 2.4; F.inner.rotation.y -= dt * 3.4; F.tex.offset.x -= dt * .5; F.grp.rotation.z = Math.sin(T.t * .6) * .05;
-  F.snd.setVolume(3 * k);
+  T.cx = x; T.cz = z;
+  const k = Math.min(1, T.t / 4, (dur - T.t) / 4), F = tornadoFx, S = T.ef ? 1.8 : 1;
+  F.grp.position.set(x, gy, z); F.grp.scale.set((.2 + .8 * k) * S, (.3 + .7 * k) * (T.ef ? 1.25 : 1), (.2 + .8 * k) * S);
+  F.outer.rotation.y += dt * 2.4 * (T.ef ? 1.4 : 1); F.inner.rotation.y -= dt * 3.4 * (T.ef ? 1.4 : 1); F.tex.offset.x -= dt * .5; F.grp.rotation.z = Math.sin(T.t * .6) * .05;
+  F.snd.setVolume((T.ef ? 5 : 3) * k);
   // Staub + Trümmer am Boden
-  for (let i = 0; i < 40 * dt; i++) { const a = rand(0, 7), r = rand(4, 16); smoke.spawn(x + Math.cos(a) * r, gy + rand(0, 3), z + Math.sin(a) * r, -Math.sin(a) * 9 + Math.cos(a) * 3, rand(3, 9), Math.cos(a) * 9 + Math.sin(a) * 3, rand(2, 4)); }
-  if (Math.random() < dt * 3) spawnDebris(V(x + rand(-8, 8), gy + 1, z + rand(-8, 8)), pick([0x6b5a45, 0x8a8a8a, 0x4a3b2b]), 3, .25, 9);
+  for (let i = 0; i < 40 * S * dt; i++) { const a = rand(0, 7), r = rand(4, 16) * S; smoke.spawn(x + Math.cos(a) * r, gy + rand(0, 3), z + Math.sin(a) * r, -Math.sin(a) * 9 + Math.cos(a) * 3, rand(3, 9), Math.cos(a) * 9 + Math.sin(a) * 3, rand(2, 4)); }
+  if (Math.random() < dt * 3 * S) spawnDebris(V(x + rand(-8, 8), gy + 1, z + rand(-8, 8)), pick([0x6b5a45, 0x8a8a8a, 0x4a3b2b]), 3, .25, 9);
   if (k < .5) return;
   const d2 = (px, pz) => (px - x) ** 2 + (pz - z) ** 2;
-  for (const c of allNpc) if (!c.dead && d2(c.group.position.x, c.group.position.z) < 20 * 20) tossCar(c, x, z);
-  for (const p of peds) if (p.alive && d2(p.root.position.x, p.root.position.z) < 13 * 13) tossPed(p, x, z);
-  if (amHost()) for (const pr of props) if (!pr.broken && d2(pr.mesh.position.x, pr.mesh.position.z) < 12 * 12) breakPropNet(pr);
+  for (const c of allNpc) if (!c.dead && d2(c.group.position.x, c.group.position.z) < (20 * S) ** 2) tossCar(c, x, z);
+  for (const p of peds) if (p.alive && d2(p.root.position.x, p.root.position.z) < (13 * S) ** 2) tossPed(p, x, z);
+  if (amHost()) for (const pr of props) if (!pr.broken && d2(pr.mesh.position.x, pr.mesh.position.z) < (12 * S) ** 2) breakPropNet(pr);
   const dh = Math.sqrt(d2(headWorld.x, headWorld.z));
+  if (T.ef) {                                                           // EF5: saugt ein, wirbelt hoch, schleudert weg
+    const ax = x - headWorld.x, az = z - headWorld.z, l = Math.hypot(ax, az) || 1, pull = (1 - dh / 60) * 13 + 1.5;
+    if (player.inCar && !pcar.fly && !pcar.air && vehicle.type !== 'scooter' && dh < 50) {
+      pcar.group.position.x += (ax / l * pull - az / l * 5) * dt; pcar.group.position.z += (az / l * pull + ax / l * 5) * dt; pcar.speed *= 1 - Math.min(1, dt * 2);
+      if (dh < 14) { pcar.fly = { t: 0, ang: Math.atan2(-az, -ax), r: dh, h: 0 }; msg('Der Tornado hat dein Auto erfasst!', 2.5); }
+    } else if (!seated() && !player.dead && !player.fly && dh < 60) {
+      dolly.position.x += (ax / l * pull - az / l * 5) * dt; dolly.position.z += (az / l * pull + ax / l * 5) * dt;
+      if (dh < 11) { player.fly = { t: 0, ang: Math.atan2(-az, -ax), r: dh, h: headWorld.y - groundAt(headWorld.x, headWorld.z), phase: 'up' }; msg('Der Tornado saugt dich ein!', 2.5); }
+    }
+    if (!player.inCar && !pcar.fly && !pcar.air && !pcar.dead && vehicle.type !== 'scooter' && d2(pcar.group.position.x, pcar.group.position.z) < 14 * 14) pcar.fly = { t: 0, ang: Math.atan2(pcar.group.position.z - z, pcar.group.position.x - x), r: 12, h: 0 };   // dein geparktes Auto fliegt auch
+    return;
+  }
   if (player.inCar && dh < 18) {                                         // im Auto: wird zur Seite geschoben + Schaden
     const ax = pcar.group.position.x - x, az = pcar.group.position.z - z, l = Math.hypot(ax, az) || 1;
     pcar.group.position.x += (-az / l * 9 + ax / l * 4) * dt; pcar.group.position.z += (ax / l * 9 + az / l * 4) * dt;
@@ -4017,16 +4034,58 @@ function updTsunami(dt) {
   }
   if (S.swept > 0 && player.inCar) { S.swept -= dt; pcar.group.position.addScaledVector(dir, 16 * (S.swept / 3.5) * dt); }
 }
+// Spieler im EF5-Tornado: kreist im Trichter nach oben (bis 70 m), wird dann weggeschleudert und landet hart
+function updPlayerFly(dt) {
+  const F = player.fly; if (!F) return;
+  if (player.dead || seated()) { player.fly = null; return; }
+  const T = disaster.tornado, hp = camera.getWorldPosition(v1); F.t += dt;
+  let tx, ty, tz;
+  if (F.phase === 'up') {
+    if (T) { F.cx = T.cx; F.cz = T.cz; }
+    F.ang += dt * 2.3; F.r += (8 - F.r) * Math.min(1, dt * 1.5); F.h = Math.min(70, F.h + dt * 13);
+    tx = F.cx + Math.cos(F.ang) * F.r; tz = F.cz + Math.sin(F.ang) * F.r; ty = groundAt(F.cx, F.cz) + F.h;
+    if (F.t > 5.5 || !T) {                                              // rausgeschleudert: tangential + nach außen + hoch
+      F.phase = 'throw'; F.vel = V(-Math.sin(F.ang) * 18 + Math.cos(F.ang) * 10, 12, Math.cos(F.ang) * 18 + Math.sin(F.ang) * 10);
+      msg('Du wirst weggeschleudert!', 2); hands.forEach(h => haptic(h, .8, 200));
+    }
+    if (Math.random() < dt * 4) hands.forEach(h => haptic(h, .4, 60));
+  } else {
+    F.vel.y -= 9.8 * dt; tx = hp.x + F.vel.x * dt; tz = hp.z + F.vel.z * dt; ty = hp.y + F.vel.y * dt;
+    const gy = surfaceAt(tx, tz) + 1.6;
+    if (ty <= gy) {                                                     // Landung
+      ty = gy; const v = -F.vel.y; player.fly = null;
+      player.hp -= clamp(v * 1.5, 10, 75); hurt = 1; lastHurt = time; hands.forEach(h => haptic(h, 1, 300)); playAt(SND.hit, V(tx, gy, tz), 1.6);
+      if (player.hp <= 0) die('Vom Tornado weggeschleudert'); else msg('Hart gelandet! Noch ' + Math.round(player.hp) + ' HP', 3);
+    }
+  }
+  dolly.position.x += tx - hp.x; dolly.position.y += ty - hp.y; dolly.position.z += tz - hp.z;
+  if (!player.fly) walk(0, 0, 0, dt);                                     // nicht in einer Wand landen
+  vigTarget = .55;                                                      // Komfort-Rand gegen Übelkeit
+}
+// Auto im EF5-Tornado: kreist hoch und dreht sich, dann wird es weggeschleudert (Landung = normale Flugphysik + Schaden)
+function carFlight(c, dt) {
+  const F = c.fly, T = disaster.tornado, g = c.group; F.t += dt;
+  if (T) { F.cx = T.cx; F.cz = T.cz; }
+  F.ang += dt * 1.9; F.r += (9 - F.r) * Math.min(1, dt * 1.5); F.h = Math.min(48, F.h + dt * 11);
+  g.position.set(F.cx + Math.cos(F.ang) * F.r, groundAt(F.cx, F.cz) + F.h, F.cz + Math.sin(F.ang) * F.r);
+  c.heading += dt * 3.2; c.slS = Math.sin(F.t * 2.1) * .5; c.sdS = Math.cos(F.t * 1.6) * .6; c.speed = 0; c.yawRate = 3.2;
+  g.rotation.set(-c.slS, c.heading, c.sdS, 'YXZ'); g.updateMatrixWorld(true);
+  if (F.t > 5 || !T) {
+    c.fly = null; c.air = true; c.airT = 0; c.vy = rand(6, 10);
+    c.heading = F.ang + Math.PI / 2 + rand(-.4, .4); c.speed = rand(20, 28); c.yawRate = 0;
+    if (player.inCar) msg('Dein Auto wird weggeschleudert!', 2);
+  }
+}
 function stopDisasters() { endTornado(); endTsunami(); }
 function updDisasters(dt) {
-  updTornado(dt); updTsunami(dt); updFlying(dt);
+  updTornado(dt); updTsunami(dt); updFlying(dt); updPlayerFly(dt);
   spray.update(dt, -6);
 }
 // Admin-Knöpfe (Handy-App "Admin Panel")
 const FIRE_WHY = ['einem Kurzschluss', 'einer Gasexplosion', 'Brandstiftung', 'einem Blitzeinschlag', 'einem Küchenbrand'];
 function adminAction(k) {
   if (!isAdmin()) return;
-  if (k === 'tornado') { const ev = makeTornadoEv(); startTornado(ev); share('tornado', ev); }
+  if (k === 'tornado' || k === 'tornado5') { const ev = makeTornadoEv(k === 'tornado5' ? 5 : 0); startTornado(ev); share('tornado', ev); }
   else if (k === 'tsunami') { const ev = makeTsunamiEv(); startTsunami(ev); share('tsunami', ev); }
   else if (k === 'vil') {
     const cand = peds.map((p, i) => [p, i]).filter(([p]) => p.alive && p !== vil.ped).sort((a, b) => a[0].root.position.distanceTo(headWorld) - b[0].root.position.distanceTo(headWorld));
@@ -5261,7 +5320,7 @@ function frame() {
   if (seated() && player.recalT && time > player.recalT) { player.recalT = 0; player.calib.x = camera.position.x; player.calib.z = camera.position.z; msg('Sitz eingestellt (Stick drücken = neu einstellen)', 2); }
   updPlayerCar(dt);
   if (player.inCar) seatPlayer();
-  else if (!player.ride) { const gy = surfaceAt(headWorld.x, headWorld.z) + player.hOff; dolly.position.y += (gy - dolly.position.y) * Math.min(1, dt * 12); }   // Mitfahrer: Sitz wird in updNet gesetzt
+  else if (!player.ride && !player.fly) { const gy = surfaceAt(headWorld.x, headWorld.z) + player.hOff; dolly.position.y += (gy - dolly.position.y) * Math.min(1, dt * 12); }   // Mitfahrer: Sitz wird in updNet gesetzt
   camera.getWorldPosition(headWorld);   // Kopfposition nach der Bewegung in diesem Bild aktualisieren
   // VR: Handy in der Hand dreht den Bildschirm zu den Augen -> kein Kopf-Runterbeugen,
   // und die Rückkamera filmt genau das, was hinter dem Handy liegt (wohin du schaust)
