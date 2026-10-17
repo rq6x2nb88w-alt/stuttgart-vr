@@ -632,7 +632,9 @@ function buildInteriors() {
     // lokales Raster: Eingang zeigt nach +z, Türloch zwischen d0 und d1 (x)
     const [fx, fz] = S.front, rot = Math.atan2(fx, fz), along = fz !== 0;
     const HX = (along ? S.w : S.d) / 2, HZ = (along ? S.d : S.w) / 2, TW = .3, ix = HX - TW, iz = HZ - TW;
-    const y0 = surfaceAt(S.x, S.z) + (S.kind === 'shop' ? .06 : .012), H = S.kind === 'school'   // Tankstelle: über dem Asphalt (der wird nach vorne gezogen) ? 2.95 : Math.min(S.h - .35, S.kind === 'market' ? 4.2 : 3.3);
+    // Boden knapp über dem Gehweg; an der Tankstelle etwas höher (der Asphalt dort wird nach vorne gezogen)
+    const y0 = surfaceAt(S.x, S.z) + (S.kind === 'shop' ? .06 : .012);
+    const H = S.kind === 'school' ? 2.95 : Math.min(S.h - .35, S.kind === 'market' ? 4.2 : 3.3);   // Raumhöhe
     let d0, d1;
     if (S.kit) { const L = 2 * HX, bays = Math.max(1, Math.round(L / 3)), bw = L / bays, i = Math.floor(bays / 2); d0 = -HX + i * bw; d1 = d0 + bw; }   // dort, wo die Fassade die Tür hat
     else { const DW = S.kind === 'market' ? 2.8 : 2.2; d0 = -DW / 2; d1 = DW / 2; }
@@ -654,7 +656,7 @@ function buildInteriors() {
     // ---- Raum: Boden, Decke, Wände (vorne mit Türloch), Laibung ----
     const rep = S.kind === 'school' ? 2.5 : 1.6;
     tq(roomMat({ map: S.kind === 'school' ? ITEX.lino : ITEX.tiles, roughness: .55 }, .35), [[-ix, 0, iz], [ix, 0, iz], [ix, 0, -iz], [-ix, 0, -iz]], [0, 0, 2 * ix / rep, 0, 2 * ix / rep, 2 * iz / rep, 0, 2 * iz / rep]);
-    quad([[-ix, H, -iz], [ix, H, -iz], [ix, H, iz], [-ix, H, iz]], null, 0xf7f7f4, vc);
+    quad([[-ix, H, -iz], [ix, H, -iz], [ix, H, iz], [-ix, H, iz]], null, 0xd9d9d4, emi);   // Decke: hell (von den Lampen angestrahlt)
     quad([[-ix, 0, -iz], [ix, 0, -iz], [ix, H, -iz], [-ix, H, -iz]], null, WALL, vc);
     quad([[-ix, 0, iz], [-ix, 0, -iz], [-ix, H, -iz], [-ix, H, iz]], null, WALL, vc);
     quad([[ix, 0, -iz], [ix, 0, iz], [ix, H, iz], [ix, H, -iz]], null, WALL, vc);
@@ -1144,8 +1146,8 @@ function scarePeds(pos, r) { for (const p of peds) if (p.alive && p.root.positio
 // ===================================================================
 const flameTex = (() => { const [c, g] = C(64, 64); const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.4, 'rgba(255,255,255,.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return T(c, false); })();
 class PSys {
-  constructor(n, size, additive, smoke) {
-    Object.assign(this, { n, i: 0, smoke, pos: new Float32Array(n * 3), col: new Float32Array(n * 4), vel: new Float32Array(n * 3), life: new Float32Array(n), max: new Float32Array(n) });
+  constructor(n, size, additive, smoke, white = false) {
+    Object.assign(this, { n, i: 0, smoke, white, pos: new Float32Array(n * 3), col: new Float32Array(n * 4), vel: new Float32Array(n * 3), life: new Float32Array(n), max: new Float32Array(n) });
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3).setUsage(THREE.DynamicDrawUsage));
     g.setAttribute('color', new THREE.BufferAttribute(this.col, 4).setUsage(THREE.DynamicDrawUsage));
@@ -1164,7 +1166,7 @@ class PSys {
       life[i] -= dt; const k = Math.max(0, life[i] / max[i]);
       vel[i * 3 + 1] += buoy * dt;
       pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
-      if (this.smoke) { const c = .25 + .2 * (1 - k); col.set([c, c, c, k * (1 - k) * 2.2], i * 4); }
+      if (this.smoke) { const c = this.white ? .82 + .15 * (1 - k) : .25 + .2 * (1 - k); col.set([c, c, c, k * (1 - k) * 2.2], i * 4); }
       else col.set([1, .25 + .65 * k * k, .08 * k, k], i * 4);
     }
     this.g.attributes.position.needsUpdate = true; this.g.attributes.color.needsUpdate = true;
@@ -1365,7 +1367,10 @@ function damageCarNet(c, n, pos) { if (c === pcar) return damageCar(c, n, pos); 
 function glassNet(c, pos) { if (!c.glassMat.visible) return; c.glassMat.visible = false; spawnDebris(pos, 0x9fb7c4, 10, .06, 2); if (c !== pcar) share('glass', { i: allNpc.indexOf(c), p: pos.toArray().map(r2) }); }
 function applyEv(m) {
   const P3 = a => V(a[0], a[1], a[2]);
-  if (m.k === 'ign') { const f = flammables[m.i]; if (f && f.owner !== pcar) { ignite(f, m.r); f.burnT = Math.max(f.burnT, m.bt || 0); } }
+  if (m.k === 'ign') { const f = flammables[m.i]; if (f && f.owner !== pcar) { if (m.a) lastFireAlert = -999; ignite(f, m.r); f.burnT = Math.max(f.burnT, m.bt || 0); } }   // a = vom Admin: Warnung immer zeigen
+  else if (m.k === 'tornado') startTornado(m);
+  else if (m.k === 'tsunami') startTsunami(m);
+  else if (m.k === 'dstop') stopDisasters();
   else if (m.k === 'vil') { setVillain(m.i); }
   else if (m.k === 'boom') { const f = flammables[m.i]; if (f && f.owner !== pcar) boom(f, false); }
   else if (m.k === 'prop') { const p = props[m.i]; if (p) breakProp(p); }
@@ -1376,7 +1381,7 @@ function applyEv(m) {
     const o = P3(m.o), e = P3(m.e);
     playAt(SND.gun, o, 1.6, 10); showTracer(o, e); if (m.h) sparks(e); scarePeds(o, 40);
   }
-  else if (m.k === 'w') { weather.target = m.v; }
+  else if (m.k === 'w') { weather.target = m.v; if (m.t) weather.t = m.t; }
   else if (m.k === 'hitfx') { const p = P3(m.p); playAt(m.s === 'hit' ? SND.hit : SND.crash, p, 1); sparks(p, 6); }
 }
 // Snapshot für Spieler, die später dazukommen
@@ -1586,6 +1591,13 @@ function icon(g, kind, x, y, s = 1) {
   if (kind === 'play') { g.beginPath(); g.moveTo(-10, -14); g.lineTo(14, 0); g.lineTo(-10, 14); g.fill(); }
   if (kind === 'garage') { g.beginPath(); g.roundRect(-26, -4, 52, 16, 5); g.fill(); g.beginPath(); g.moveTo(-16, -4); g.lineTo(-9, -16); g.lineTo(11, -16); g.lineTo(18, -4); g.fill(); g.fillStyle = '#3b6fd8'; for (const x of [-15, 15]) { g.beginPath(); g.arc(x, 13, 6, 0, 7); g.fill(); } }
   if (kind === 'mis') { g.fillRect(-14, -22, 4, 44); g.beginPath(); g.moveTo(-10, -22); g.lineTo(18, -14); g.lineTo(-10, -4); g.fill(); }
+  if (kind === 'admin') { g.beginPath(); g.moveTo(0, -24); g.lineTo(20, -16); g.lineTo(18, 6); g.quadraticCurveTo(12, 18, 0, 25); g.quadraticCurveTo(-12, 18, -18, 6); g.lineTo(-20, -16); g.closePath(); g.fill(); g.fillStyle = '#b3001b'; g.font = 'bold 22px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('A', 0, 1); }
+  if (kind === 'tornado') { for (let i = 0; i < 6; i++) { const w = 34 - i * 5.5; g.lineWidth = 4; g.beginPath(); g.moveTo(-w / 2 + i * 1.5, -20 + i * 8); g.lineTo(w / 2 + i * 1.5, -20 + i * 8); g.stroke(); } }
+  if (kind === 'wave') { g.lineWidth = 5; g.beginPath(); g.moveTo(-24, 14); g.quadraticCurveTo(-10, 14, -4, 0); g.quadraticCurveTo(4, -18, 18, -14); g.quadraticCurveTo(8, -6, 12, 4); g.stroke(); g.beginPath(); g.moveTo(-24, 22); g.lineTo(24, 22); g.stroke(); }
+  if (kind === 'vil') { g.beginPath(); g.arc(0, 0, 18, 0, 7); g.stroke(); g.beginPath(); g.arc(0, 0, 8, 0, 7); g.stroke(); g.lineWidth = 3; g.beginPath(); g.moveTo(0, -26); g.lineTo(0, 26); g.moveTo(-26, 0); g.lineTo(26, 0); g.stroke(); }
+  if (kind === 'fire') { g.beginPath(); g.moveTo(0, -24); g.quadraticCurveTo(18, -4, 14, 10); g.quadraticCurveTo(10, 24, 0, 24); g.quadraticCurveTo(-10, 24, -14, 10); g.quadraticCurveTo(-16, -2, -6, -10); g.quadraticCurveTo(-4, 0, 0, -2); g.closePath(); g.fill(); }
+  if (kind === 'rain') { g.beginPath(); g.arc(-8, -6, 11, Math.PI * .9, Math.PI * 1.9); g.arc(6, -8, 13, Math.PI * 1.1, Math.PI * 2.1); g.lineTo(18, 4); g.lineTo(-18, 4); g.closePath(); g.fill(); g.lineWidth = 3; for (const x of [-10, 0, 10]) { g.beginPath(); g.moveTo(x, 10); g.lineTo(x - 4, 22); g.stroke(); } }
+  if (kind === 'stop') { g.beginPath(); g.roundRect(-14, -14, 28, 28, 4); g.fill(); }
   g.restore();
 }
 // zeichnet die aktuelle App in appCan
@@ -1601,14 +1613,17 @@ function drawApp() {
     tx(g, hhmm(), PW / 2, 150, 76, '#fff', 'center', 300);
     tx(g, new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }), PW / 2, 205, 20);
     const apps = [['GPS', '#2fa84f', 'gps'], ['Kamera', '#555', 'camera'], ['Telefon', '#2fc14f', 'tel'], ['Galerie', '#f39c12', 'gal'], ['Garage', '#3b6fd8', 'garage'], ['Missionen', '#d8402b', 'mis']];
+    if (isAdmin()) apps.push(['Admin Panel', '#b3001b', 'admin']);       // nur für Gabriel
+    const yOff = apps.length > 6 ? -40 : 0;
     apps.forEach(([n, c, id], i) => {
       const k = ease((at - i * .1) / .35); if (k <= 0) return;
-      const x = 22 + (i % 3) * 112, y = 270 + Math.floor(i / 3) * 140 + (1 - k) * 40;
-      g.globalAlpha = k; rr(g, x, y, 92, 92, 22, c); icon(g, id, x + 46, y + 46, 1); tx(g, n, x + 46, y + 110, 16); g.globalAlpha = 1;
+      const x = 22 + (i % 3) * 112, y = 270 + yOff + Math.floor(i / 3) * 140 + (1 - k) * 40;
+      g.globalAlpha = k; rr(g, x, y, 92, 92, 22, c); icon(g, id, x + 46, y + 46, 1); tx(g, n, x + 46, y + 110, n.length > 9 ? 13 : 16); g.globalAlpha = 1;
       btn(x, y, 92, 120, 'app:' + id);
     });
-    if (phone.missed) { rr(g, 20, 560, PW - 40, 50, 16, 'rgba(0,0,0,.45)'); tx(g, 'Verpasster Anruf: ' + phone.missed, PW / 2, 585, 17); }
-    tx(g, (net.online ? `Online: ${net.players.size + 1} Spieler` : 'Offline') + `   ·   ${money} €   ·   ${Math.round(player.hp)} HP`, PW / 2, 640, 15, net.online ? '#9f9' : '#f99');
+    const yb = apps.length > 6 ? 660 : 560;
+    if (phone.missed) { rr(g, 20, yb, PW - 40, 50, 16, 'rgba(0,0,0,.45)'); tx(g, 'Verpasster Anruf: ' + phone.missed, PW / 2, yb + 25, 17); }
+    tx(g, (net.online ? `Online: ${net.players.size + 1} Spieler` : 'Offline') + `   ·   ${money} €   ·   ${Math.round(player.hp)} HP`, PW / 2, yb + 80, 15, net.online ? '#9f9' : '#f99');
   } else if (a === 'gps') drawMap(g);
   else if (a === 'garage') {
     tx(g, 'Garage', 24, 100, 34, '#fff', 'left', 700); tx(g, 'Fahrzeug holen – erscheint vor dir', 24, 132, 15, '#aaa', 'left');
@@ -1620,6 +1635,21 @@ function drawApp() {
     const yb = 155 + VEHICLES.length * 58 + 6;
     rr(g, 16, yb, PW - 32, 48, 12, '#444'); tx(g, 'Fahrzeug reparieren / holen', PW / 2, yb + 24, 17); btn(16, yb, PW - 32, 48, 'vreset');
     if (!VEHICLES.some(v => v.file)) { tx(g, 'Eigene Autos (BMW, Urus …):', PW / 2, yb + 80, 14, '#aaa'); tx(g, '.glb in assets/models/autos/', PW / 2, yb + 100, 14, '#aaa'); }
+  } else if (a === 'admin') {
+    // Admin Panel (nur Gabriel): Ereignisse für alle Spieler auslösen
+    rr(g, 0, 60, PW, 96, 0, '#5c0010'); tx(g, 'Admin Panel', 24, 96, 32, '#fff', 'left', 800); tx(g, 'Gilt für alle Spieler auf dem Server', 24, 130, 14, '#ffb3b3', 'left', 500);
+    const T = disaster.tornado, S = disaster.tsunami;
+    [['tornado', 'Tornado starten', T ? 'läuft gerade …' : 'zieht durch die Stadt', '#6b4e16'],
+     ['wave', 'Tsunami starten', S ? 'läuft gerade …' : 'Riesenwelle + Überschwemmung', '#0d4f6b'],
+     ['vil', 'NPC-Angriff starten', vil.ped ? 'läuft gerade …' : 'ein NPC schießt auf andere', '#8e1b1b'],
+     ['fire', 'Gebäude anzünden', 'ein Haus in der Nähe brennt', '#b34700'],
+     ['rain', weather.target ? 'Regen ausschalten' : 'Regen einschalten', weather.target ? 'es regnet gerade' : 'es ist gerade trocken', '#2b5d9b'],
+     ['stop', 'Alles stoppen', 'Tornado, Tsunami, Angriff beenden', '#444a55']].forEach(([id, n, sub, c], i) => {
+      const y = 172 + i * 86, act = { tornado: 'tornado', wave: 'tsunami', vil: 'vil', fire: 'fire', rain: 'rain', stop: 'stop' }[id];
+      rr(g, 14, y, PW - 28, 76, 16, c); g.beginPath(); g.arc(52, y + 38, 26, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, id, 52, y + 38, .8);
+      tx(g, n, 92, y + 28, 19, '#fff', 'left', 800); tx(g, sub, 92, y + 54, 13, 'rgba(255,255,255,.75)', 'left', 500);
+      btn(14, y, PW - 28, 76, 'adm:' + act);
+    });
   } else if (a === 'mis') {
     tx(g, 'Missionen', 24, 100, 34, '#fff', 'left', 700); tx(g, 'Konto: ' + money + ' €', 24, 132, 16, '#9f9', 'left');
     // Live-Mission: NPC-Angreifer (rot)
@@ -1803,6 +1833,7 @@ function phoneAction(a) {
   if (a === 'vreset') { resetVehicle(true); msg('Fahrzeug zurückgesetzt', 2); return; }
   if (a.startsWith('mis:')) { startMission(a.slice(4)); return openApp('home'); }
   if (a === 'misstop') { mission = null; msg('Mission abgebrochen', 2); return; }
+  if (a.startsWith('adm:')) { adminAction(a.slice(4)); return; }
   if (a === 'save') {
     const it = phone.gallery[phone.view]; if (!it) return;
     const l = document.createElement('a');
@@ -2653,7 +2684,7 @@ function updPlayerCar(dt) {
     } else if (d.pulse > 0) { d.pulse -= dt; d.a += ((d.pulse > .7 ? .9 : 0) - d.a) * Math.min(1, dt * 5); }
     else if ((player.inCar && d === c.doors[0]) || Math.abs(c.speed) > 1.5) d.a = Math.max(0, d.a - dt * 2);
     d.pivot.rotation.y = -d.side * d.a;
-    doorSound(d, d.a, d.handle, dt);                                    // Tür auf: Klacken, zu: dumpfer Schlag
+    doorSound(d, d.a, d.handle, dt, s => slamCar(c.sus || (c.sus = {}), d.side, s));   // Tür auf: Klacken, zu: dumpfer Schlag + Auto wippt
   }
   if (!sc) updWindows(dt);
   let thr = 0, brk = 0, stx = 0;
@@ -2833,11 +2864,17 @@ function updSlideDoors(dt) {
 }
 
 // ---------- Türen: Klacken beim Öffnen, dumpfes Zuschlagen ----------
-function doorSound(st, a, obj, dt) {
+// onSlam(stärke 0..1): Tür ist zugefallen -> Auto wippt kurz in den Stoßdämpfern
+function doorSound(st, a, obj, dt, onSlam) {
   if (!st.sOpen && a > .05) { st.sOpen = true; playAt(SND.doorOpen, obj.getWorldPosition(V()), .9, 3); }
-  else if (st.sOpen && a < .015) { st.sOpen = false; playAt(SND.doorClose, obj.getWorldPosition(V()), clamp(.45 + ((st.sA ?? a) - a) / Math.max(dt, .001) * .35, .45, 1.5), 4); }
+  else if (st.sOpen && a < .015) {
+    st.sOpen = false; const v = clamp(.45 + ((st.sA ?? a) - a) / Math.max(dt, .001) * .35, .45, 1.5);
+    playAt(SND.doorClose, obj.getWorldPosition(V()), v, 4); onSlam?.(clamp((v - .3) / 1.2, .3, 1));
+  }
   st.sA = a;
 }
+// Tür zugeschlagen: Karosserie federt kurz ein und wippt zur Seite (ganz leicht)
+function slamCar(S, side, s) { S.hv = (S.hv || 0) - .3 * s; S.rv = (S.rv || 0) - side * .2 * s; }
 
 // ---------- Dashcam: hängt an der Frontscheibe, Weitwinkel, wackelt bei Wellen, fliegt bei hartem Crash durchs Auto ----------
 const dashRT = new THREE.WebGLRenderTarget(512, 288); dashRT.texture.colorSpace = THREE.SRGBColorSpace;
@@ -3164,7 +3201,7 @@ function applyNpc(m) {
   m.h?.forEach((a, i) => { const c = hwCars[i]; if (c) { c.x = a[0]; c.speed = a[1]; } });
   m.p?.forEach((a, i) => {
     const p = peds[i]; if (!p) return;
-    if (a[0] < 0) { if (p.alive) killPed(p, null); p.root.position.set(a[1], .15, a[2]); p.root.rotation.y = a[3]; return; }
+    if (a[0] < 0) { if (p.alive) killPed(p, null); if (!p.flying) { p.root.position.set(a[1], .15, a[2]); p.root.rotation.y = a[3]; } return; }
     if (!p.alive) { p.alive = true; p.root.rotation.set(0, 0, 0); p.root.visible = true; }
     const b = blocks[a[0]]; p.bi = a[0]; p.cx = b.cx; p.cz = b.cz; p.s = a[1]; p.dir = a[2]; p.flee = a[3] ? 5 : 0; p.speed = a[4];
   });
@@ -3788,6 +3825,226 @@ function villainShoot(p) {
 }
 
 // ===================================================================
+// Admin (Spielername "Gabriel"): Tornado, Tsunami, NPC-Angriff, Gebäudebrand, Regen – für alle Spieler
+// ===================================================================
+const isAdmin = () => /^gabriel$/i.test((net.name || '').trim());
+const flying = [];                                                      // durch die Luft fliegende Autos / Leute
+const disaster = { tornado: null, tsunami: null };
+const spray = new PSys(500, 7, false, true, true);                     // weiße Gischt (Tsunami)
+let lpW = 0, lpW2 = 0;
+SND.wind = mkBuf(4, (t, r) => { lpW += (r - lpW) * .03; lpW2 += (lpW - lpW2) * .06; return lpW2 * 7 * (1 + .35 * Math.sin(t * Math.PI * 1.5)) + lpW * .6; });   // tiefes Brausen (Schleife)
+// Auto oder Mensch wird weggeschleudert (dir = Schubrichtung beim Tsunami, sonst Wirbel um cx/cz)
+function tossCar(c, cx, cz, dir) {
+  if (c.dead || c.flying) return;
+  c.home = c.home || { p: c.group.position.clone(), r: c.group.rotation.clone() };
+  c.dead = true; c.flying = true; c.speed = 0;
+  const p = c.group.position, ax = p.x - cx, az = p.z - cz, l = Math.hypot(ax, az) || 1;
+  const vel = dir ? V(dir.x * rand(13, 19), rand(3, 7), dir.z * rand(13, 19))
+    : V(-az / l * rand(10, 16) + ax / l * rand(4, 9), rand(15, 25), ax / l * rand(10, 16) + az / l * rand(4, 9));
+  flying.push({ o: c.group, vel, spin: V(rand(-3, 3), rand(-4, 4), rand(-3, 3)), car: c, t: 0, b: 0 });
+  playAt(SND.crash, p, 1.2, 10);
+}
+function tossPed(p, cx, cz, dir) {
+  if (!p.alive) return;
+  killPed(p, null); p.flying = true;
+  const q = p.root.position, ax = q.x - cx, az = q.z - cz, l = Math.hypot(ax, az) || 1;
+  const vel = dir ? V(dir.x * rand(9, 14), rand(2, 5), dir.z * rand(9, 14)) : V(-az / l * 9 + ax / l * 5, rand(12, 20), ax / l * 9 + az / l * 5);
+  flying.push({ o: p.root, vel, spin: V(rand(-6, 6), rand(-6, 6), rand(-6, 6)), ped: p, t: 0, b: 0 });
+}
+// gelandetes Auto: bleibt als Wrack liegen (auf Rad, Seite oder Dach) und taucht nach einer Weile heil wieder auf
+function wreckCar(c) {
+  const q = Math.PI / 2, g = c.group;
+  g.rotation.x = Math.round(g.rotation.x / q) * q; g.rotation.z = Math.round(g.rotation.z / q) * q;
+  const up = V(0, 1, 0).applyEuler(g.rotation), roof = up.y < -.5, side = Math.abs(up.y) <= .5;   // liegt es auf dem Dach / auf der Seite?
+  g.position.y = surfaceAt(g.position.x, g.position.z) + (side ? c.half.x : roof ? c.half.y : 0);
+  c.bodyMat.color.multiplyScalar(.7); c.glassMat.visible = false;
+  c.flying = false; c.wrecked = true; c.wreckT = 0;
+}
+function reviveCar(c) {
+  c.wrecked = false; c.dead = false; c.flying = false;
+  if (c.fl?.orig?.[0]) c.bodyMat.color.copy(c.fl.orig[0]); c.glassMat.visible = true;
+  const h = c.home; c.home = null;
+  if (h) { c.group.position.copy(h.p); c.group.rotation.copy(h.r); } else c.group.rotation.set(0, c.group.rotation.y, 0);
+}
+function updFlying(dt) {
+  for (let i = flying.length - 1; i >= 0; i--) {
+    const f = flying[i], o = f.o; f.t += dt;
+    f.vel.y -= 9.8 * dt;
+    o.position.addScaledVector(f.vel, dt);
+    o.rotation.x += f.spin.x * dt; o.rotation.y += f.spin.y * dt; o.rotation.z += f.spin.z * dt;
+    const gy = surfaceAt(o.position.x, o.position.z);
+    if (o.position.y <= gy && f.vel.y < 0) {
+      o.position.y = gy;
+      if (f.vel.y < -5 && f.b < 2) { f.vel.y *= -.3; f.vel.x *= .5; f.vel.z *= .5; f.spin.multiplyScalar(.5); f.b++; if (f.car) playAt(SND.crash, o.position, 1.4, 12); continue; }
+      if (f.car) wreckCar(f.car);
+      if (f.ped) { f.ped.flying = false; o.rotation.set(-Math.PI / 2, o.rotation.y, 0); o.position.y = gy + .15; }
+      flying.splice(i, 1);
+    } else if (f.t > 25) { if (f.car) wreckCar(f.car); if (f.ped) f.ped.flying = false; flying.splice(i, 1); }
+  }
+  // Wracks verschwinden nach 2 Minuten (wenn keiner hinschaut) und fahren wieder heil herum
+  for (const c of allNpc) if (c.wrecked && (c.wreckT += dt) > 120 && c.group.position.distanceTo(headWorld) > 70) reviveCar(c);
+}
+
+// ---------- Tornado: zieht durch die Stadt, wirbelt Autos und Leute durch die Luft ----------
+function buildTornado() {
+  const [c, g] = C(256, 512);
+  g.fillStyle = 'rgba(120,114,104,.45)'; g.fillRect(0, 0, 256, 512);
+  for (let i = 0; i < 1100; i++) { const v = rand(60, 165) | 0; g.strokeStyle = `rgba(${v},${v - 6},${v - 14},${rand(.05, .3)})`; g.lineWidth = rand(2, 9); const x = rand(-40, 256), y = rand(0, 512); g.beginPath(); g.moveTo(x, y); g.lineTo(x + rand(30, 140), y + rand(-14, 14)); g.stroke(); }
+  const tex = T(c); tex.repeat.set(3, 1);
+  const prof = [[3.5, 0], [5, 10], [7, 35], [10, 70], [16, 110], [26, 160], [42, 210], [75, 255], [125, 278]].map(([r, y]) => new THREE.Vector2(r, y));
+  const mat = (col, op) => new THREE.MeshBasicMaterial({ map: tex, color: col, transparent: true, opacity: op, side: THREE.DoubleSide, depthWrite: false });
+  const grp = new THREE.Group(), outer = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), mat(0x9a948c, .8));
+  const inner = new THREE.Mesh(new THREE.LatheGeometry(prof.map(v => new THREE.Vector2(v.x * .62, v.y)), 32), mat(0x5e5952, .9));
+  const cloud = new THREE.Mesh(new THREE.SphereGeometry(1, 32, 12), new THREE.MeshBasicMaterial({ color: 0x3a3d43, transparent: true, opacity: .9, side: THREE.DoubleSide, depthWrite: false }));
+  cloud.scale.set(330, 34, 330); cloud.position.y = 292;
+  grp.add(outer, inner, cloud); grp.visible = false; scene.add(grp);
+  const snd = new THREE.PositionalAudio(listener); snd.setBuffer(SND.wind); snd.setLoop(true); snd.setRefDistance(45); snd.setRolloffFactor(.9); snd.setVolume(0); grp.add(snd);
+  return { grp, outer, inner, tex, snd };
+}
+let tornadoFx = null;
+function makeTornadoEv() {
+  const a = rand(0, Math.PI * 2), c = headWorld, x = c.x + Math.cos(a) * 260, z = c.z + Math.sin(a) * 260;
+  const tx = c.x + rand(-25, 25), tz = c.z + rand(-25, 25), l = Math.hypot(tx - x, tz - z);
+  return { x: r2(x), z: r2(z), dx: r2((tx - x) / l), dz: r2((tz - z) / l), len: 520, sp: 7.5, seed: r2(rand(0, 9)) };
+}
+function startTornado(ev) {
+  tornadoFx ||= buildTornado();
+  disaster.tornado = { ...ev, t: 0, hitCar: false, hitPark: false };
+  tornadoFx.grp.visible = true;
+  if (AC.state === 'running' && !tornadoFx.snd.isPlaying) tornadoFx.snd.play();
+  carAlert('Tornado-Warnung!', 'Ein Tornado zieht durch Stuttgart. Geh in ein Gebäude und halte dich fern!', '#6b4e16', 'Tornado');
+  msg('TORNADO! Geh in Deckung!', 5);
+  if (weather.target === 0) weather.target = 1;                           // dazu kommt ein Unwetter
+}
+function endTornado() {
+  disaster.tornado = null;
+  if (tornadoFx) { tornadoFx.grp.visible = false; try { tornadoFx.snd.stop(); } catch (e) { } }
+}
+function updTornado(dt) {
+  const T = disaster.tornado; if (!T) return;
+  T.t += dt; const dur = T.len / T.sp; if (T.t > dur) return endTornado();
+  const s = T.t * T.sp, wob = Math.sin(T.t * .35 + T.seed) * 18;
+  const x = T.x + T.dx * s - T.dz * wob, z = T.z + T.dz * s + T.dx * wob, gy = groundAt(x, z);
+  const k = Math.min(1, T.t / 4, (dur - T.t) / 4), F = tornadoFx;
+  F.grp.position.set(x, gy, z); F.grp.scale.set(.2 + .8 * k, .3 + .7 * k, .2 + .8 * k);
+  F.outer.rotation.y += dt * 2.4; F.inner.rotation.y -= dt * 3.4; F.tex.offset.x -= dt * .5; F.grp.rotation.z = Math.sin(T.t * .6) * .05;
+  F.snd.setVolume(3 * k);
+  // Staub + Trümmer am Boden
+  for (let i = 0; i < 40 * dt; i++) { const a = rand(0, 7), r = rand(4, 16); smoke.spawn(x + Math.cos(a) * r, gy + rand(0, 3), z + Math.sin(a) * r, -Math.sin(a) * 9 + Math.cos(a) * 3, rand(3, 9), Math.cos(a) * 9 + Math.sin(a) * 3, rand(2, 4)); }
+  if (Math.random() < dt * 3) spawnDebris(V(x + rand(-8, 8), gy + 1, z + rand(-8, 8)), pick([0x6b5a45, 0x8a8a8a, 0x4a3b2b]), 3, .25, 9);
+  if (k < .5) return;
+  const d2 = (px, pz) => (px - x) ** 2 + (pz - z) ** 2;
+  for (const c of allNpc) if (!c.dead && d2(c.group.position.x, c.group.position.z) < 20 * 20) tossCar(c, x, z);
+  for (const p of peds) if (p.alive && d2(p.root.position.x, p.root.position.z) < 13 * 13) tossPed(p, x, z);
+  if (amHost()) for (const pr of props) if (!pr.broken && d2(pr.mesh.position.x, pr.mesh.position.z) < 12 * 12) breakPropNet(pr);
+  const dh = Math.sqrt(d2(headWorld.x, headWorld.z));
+  if (player.inCar && dh < 18) {                                         // im Auto: wird zur Seite geschoben + Schaden
+    const ax = pcar.group.position.x - x, az = pcar.group.position.z - z, l = Math.hypot(ax, az) || 1;
+    pcar.group.position.x += (-az / l * 9 + ax / l * 4) * dt; pcar.group.position.z += (ax / l * 9 + az / l * 4) * dt;
+    if (!T.hitCar) { T.hitCar = true; crash(17, V(x, pcar.group.position.y + .5, z)); }
+  } else if (!seated() && !player.dead && dh < 9) die('Vom Tornado erfasst');
+  if (!player.inCar && !T.hitPark && !pcar.dead && vehicle.type !== 'scooter' && d2(pcar.group.position.x, pcar.group.position.z) < 18 * 18) { T.hitPark = true; carDamage(pcar, 26, V(x, 1, z)); }
+}
+
+// ---------- Tsunami: riesige Welle rollt durch die Stadt, danach steht das Wasser ----------
+function buildWave() {
+  // Querschnitt (z = Laufrichtung, y = Höhe): flacher Rücken, steile Front, überhängende Krone
+  const prof = [[-80, 0], [-48, 7], [-24, 16], [-10, 22.5], [0, 25], [5.5, 23.5], [7, 19.5], [3.5, 14], [1.5, 7], [3, 0]];
+  const W = 1900, SEG = 80, pos = [], col = [], idx = [], cDeep = new THREE.Color(0x123f4d), cMid = new THREE.Color(0x2b7a8c), cFoam = new THREE.Color(0xf2f7f7), cc = new THREE.Color();
+  for (let i = 0; i <= SEG; i++) {
+    const x = -W / 2 + W * i / SEG;
+    prof.forEach(([z, y], j) => {
+      pos.push(x, y + Math.sin(i * 1.7) * .9 * (y / 25), z + Math.sin(i * .9) * 1.5 * (y / 25));
+      if (j >= 3 && j <= 6) cc.copy(cFoam).lerp(cMid, j === 3 || j === 6 ? .35 : 0); else cc.lerpColors(cDeep, cMid, y / 25);   // Krone weiß schäumend
+      col.push(cc.r, cc.g, cc.b);
+    });
+  }
+  const P = prof.length;
+  for (let i = 0; i < SEG; i++) for (let j = 0; j < P - 1; j++) { const a = i * P + j, b = a + P; idx.push(a, b, a + 1, a + 1, b, b + 1); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals();
+  const wave = new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .18, metalness: .1, transparent: true, opacity: .93, side: THREE.DoubleSide }));
+  const water = new THREE.Mesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x1c4652, roughness: .3, metalness: 0, transparent: true, opacity: .9, envMapIntensity: .6 }));
+  wave.frustumCulled = water.frustumCulled = false; wave.visible = water.visible = false; scene.add(wave, water);
+  const snd = new THREE.PositionalAudio(listener); snd.setBuffer(SND.wind); snd.setLoop(true); snd.setRefDistance(60); snd.setRolloffFactor(.7); snd.setPlaybackRate(.55); snd.setVolume(0);
+  const so = new THREE.Object3D(); so.add(snd); scene.add(so);
+  return { wave, water, snd, so };
+}
+let tsunamiFx = null;
+const FLOOD = 1.0;                                                     // so hoch steht danach das Wasser (m)
+function makeTsunamiEv() { const a = pick([0, 1, 2, 3]) * Math.PI / 2; return { dx: r2(Math.sin(a)), dz: r2(Math.cos(a)), sp: 20 }; }
+function startTsunami(ev) {
+  tsunamiFx ||= buildWave();
+  disaster.tsunami = { ...ev, t: 0, s0: -620, swept: 0, hitMe: false };
+  const F = tsunamiFx; F.wave.visible = F.water.visible = true;
+  F.wave.rotation.y = F.water.rotation.y = Math.atan2(ev.dx, ev.dz);
+  if (AC.state === 'running' && !F.snd.isPlaying) F.snd.play();
+  carAlert('Tsunami-Warnung!', 'Eine riesige Welle rollt auf die Stadt zu. Sofort auf einen Berg oder in die Höhe!', '#0d4f6b', 'Tsunami');
+  msg('TSUNAMI! Sofort nach oben – auf den Berg!', 6);
+}
+function endTsunami() {
+  disaster.tsunami = null;
+  if (tsunamiFx) { tsunamiFx.wave.visible = tsunamiFx.water.visible = false; try { tsunamiFx.snd.stop(); } catch (e) { } }
+}
+// aktueller Wasserstand an einer Stelle (für Spieler-Bewegung / Anzeige)
+function floodAt(x, z) { const S = disaster.tsunami; if (!S || !tsunamiFx) return -1; return x * S.dx + z * S.dz < S.front ? S.level : -1; }
+function updTsunami(dt) {
+  const S = disaster.tsunami; if (!S) return;
+  S.t += dt; const F = tsunamiFx, dir = V(S.dx, 0, S.dz);
+  const front = S.s0 + S.sp * S.t; S.front = front;
+  const passed = front > 640, recede = passed ? (S.t - 1280 / S.sp) : 0;
+  S.level = FLOOD * clamp(1 - recede / 40, 0, 1) * Math.min(1, (S.t) / 6);
+  if (passed && S.level <= 0) return endTsunami();
+  // Welle + Wasserfläche dahinter
+  F.wave.visible = !passed; F.wave.position.set(dir.x * front, 0, dir.z * front);
+  const back = S.s0 - 400, len = Math.max(1, front - back - 30);
+  F.water.position.set(dir.x * (back + len / 2), S.level, dir.z * (back + len / 2)); F.water.scale.set(2200, 1, len);
+  // Ton an der Stelle der Welle, die mir am nächsten ist
+  const hd = headWorld.x * S.dx + headWorld.z * S.dz;
+  F.so.position.set(headWorld.x + dir.x * (front - hd), 2, headWorld.z + dir.z * (front - hd)); F.snd.setVolume(passed ? 0 : 4);
+  if (passed) return;
+  // Gischt an der Krone (nur in meiner Nähe)
+  for (let i = 0; i < 90 * dt; i++) { const lat = rand(-80, 80), px = headWorld.x + dir.z * lat + dir.x * (front - hd + 4), pz = headWorld.z - dir.x * lat + dir.z * (front - hd + 4); spray.spawn(px, rand(19, 25), pz, dir.x * rand(14, 22), rand(0, 4), dir.z * rand(14, 22), rand(1.2, 2.6)); }
+  // Was die Front erreicht, wird mitgerissen
+  const hit = p => { const d = p.x * S.dx + p.z * S.dz; return d < front + 2 && d > front - 6; };
+  for (const c of allNpc) if (!c.dead && hit(c.group.position) && groundAt(c.group.position.x, c.group.position.z) < 12) tossCar(c, 0, 0, dir);
+  for (const p of peds) if (p.alive && hit(p.root.position)) tossPed(p, 0, 0, dir);
+  if (amHost()) for (const pr of props) if (!pr.broken && hit(pr.mesh.position)) breakPropNet(pr);
+  const high = headWorld.y - 1.7 > 22;                                  // auf dem Berg / weit oben: sicher
+  if (!high && !S.hitMe && hit(headWorld)) {
+    S.hitMe = true;
+    if (player.inCar) { S.swept = 3.5; crash(18, V(headWorld.x - dir.x * 3, pcar.group.position.y + .5, headWorld.z - dir.z * 3)); }
+    else if (!player.dead) die('Vom Tsunami erfasst');
+  }
+  if (S.swept > 0 && player.inCar) { S.swept -= dt; pcar.group.position.addScaledVector(dir, 16 * (S.swept / 3.5) * dt); }
+}
+function stopDisasters() { endTornado(); endTsunami(); }
+function updDisasters(dt) {
+  updTornado(dt); updTsunami(dt); updFlying(dt);
+  spray.update(dt, -6);
+}
+// Admin-Knöpfe (Handy-App "Admin Panel")
+const FIRE_WHY = ['einem Kurzschluss', 'einer Gasexplosion', 'Brandstiftung', 'einem Blitzeinschlag', 'einem Küchenbrand'];
+function adminAction(k) {
+  if (!isAdmin()) return;
+  if (k === 'tornado') { const ev = makeTornadoEv(); startTornado(ev); share('tornado', ev); }
+  else if (k === 'tsunami') { const ev = makeTsunamiEv(); startTsunami(ev); share('tsunami', ev); }
+  else if (k === 'vil') {
+    const cand = peds.map((p, i) => [p, i]).filter(([p]) => p.alive && p !== vil.ped).sort((a, b) => a[0].root.position.distanceTo(headWorld) - b[0].root.position.distanceTo(headWorld));
+    const near = cand.filter(([p]) => p.root.position.distanceTo(headWorld) > 30).slice(0, 6);
+    const c = pick(near.length ? near : cand); if (!c) return msg('Gerade ist kein NPC da', 2);
+    setVillain(-1); setVillain(c[1]); share('vil', { i: c[1] });
+  }
+  else if (k === 'fire') {
+    const b = flammables.filter(f => f.kind === 'building' && !f.tower && !f.burning && !f.done).map(f => [f, fBox(f).getCenter(V()).distanceTo(headWorld)]).filter(([, d]) => d > 25).sort((a, b) => a[1] - b[1]).slice(0, 8);
+    if (!b.length) return msg('Kein Gebäude mehr zum Anzünden', 2);
+    const f = pick(b)[0], why = pick(FIRE_WHY); lastFireAlert = -999; ignite(f, why); share('ign', { i: flammables.indexOf(f), bt: 0, r: why, a: 1 });
+  }
+  else if (k === 'rain') { const v = weather.target ? 0 : 1; weather.target = v; weather.t = 900; share('w', { v, t: 900 }); msg(v ? 'Regen an' : 'Regen aus', 2); }
+  else if (k === 'stop') { stopDisasters(); share('dstop', {}); if (vil.i >= 0) { setVillain(-1); share('vil', { i: -1 }); } msg('Alles gestoppt', 2); }
+  phone.drawT = 0;
+}
+
+// ===================================================================
 // Handy-Video mit Ton (eigene Stimme + alles was man hört, auch andere Spieler)
 // ===================================================================
 const rec = { active: false, mr: null, chunks: [], can: null, g: null, dest: null, t0: 0, src: null, next: 0 };
@@ -4275,7 +4532,11 @@ function updRemoteCar(p, dt) {
   cm.position.set(k[0], surfaceAt(k[0], k[1]) + k[3], k[1]);
   cm.rotation.set(k[4], k[2], k[5], 'YXZ');
   // Stoßdämpfer: Karosserie federt wie beim Fahrer (wer drin sitzt, sieht es nur dezent)
-  if (p.cmCh) { const f = player.ride?.id === p.id ? .35 : 1; p.cmCh.rotation.x = k[6] * f; p.cmCh.rotation.z = k[7] * f; p.cmCh.position.y = k[8] * f; }
+  if (p.cmCh) {
+    const f = player.ride?.id === p.id ? .35 : 1, L = p.sl || (p.sl = {});
+    const sr = spring(L, 'r', 0, dt, 50, 7), sh = spring(L, 'h', 0, dt, 110, 8);   // Wippen nach Türschlag
+    p.cmCh.rotation.x = k[6] * f; p.cmCh.rotation.z = (k[7] + sr) * f; p.cmCh.position.y = (k[8] + sh) * f;
+  }
   // Räder drehen sich mit dem Tempo
   for (const w of p.cmWheels) { const sp = w.children[0]; if (sp) sp.rotation.x += k[9] / .34 * dt; }
   // Motor von draußen hören
@@ -4287,7 +4548,7 @@ function updRemoteCar(p, dt) {
     if (p.dp?.[i] > 0) { p.dp[i] -= dt; if (p.dp[i] > .7) tgt = Math.max(tgt, .9); }
     pv.userData.a = (pv.userData.a || 0) + (tgt - (pv.userData.a || 0)) * Math.min(1, dt * 6);
     pv.rotation.y = -pv.userData.side * pv.userData.a;
-    doorSound(pv.userData, pv.userData.a, pv, dt);                      // Tür auf: Klacken, zu: dumpfer Schlag
+    doorSound(pv.userData, pv.userData.a, pv, dt, s => slamCar(p.sl || (p.sl = {}), pv.userData.side, s));   // Tür auf: Klacken, zu: dumpfer Schlag + Auto wippt
   }
   // Fenster: Fahrer (wd), Mitfahrer (rw) – mein eigener Sitz sofort aus meiner Eingabe
   for (let i = 0; i < p.winVal.length; i++) {
@@ -5050,7 +5311,7 @@ function frame() {
     if (time - lastHurt > 5 && player.hp < 100) player.hp = Math.min(100, player.hp + dt * 6);   // Leben regeneriert sich
     hurt = Math.max(0, hurt - dt * 1.5); deathFx.material.opacity = hurt * .45 + (player.hp < 35 ? .12 + Math.sin(time * 6) * .06 : 0);
   }
-  updWeather(dt); updMission(dt); updVillain(dt); updIntro(dt);
+  updWeather(dt); updMission(dt); updVillain(dt); updIntro(dt); updDisasters(dt);
   hud.visible = time < hudUntil;
   boomLight.intensity *= Math.pow(.02, dt); muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 120);
   tracerT -= dt; tracer.visible = tracerT > 0;
@@ -5061,4 +5322,4 @@ function frame() {
   renderPhoneCam(); renderDashcam();
   mark('phoneCam');
 }
-window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide };
+window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc };

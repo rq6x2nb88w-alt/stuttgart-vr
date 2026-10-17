@@ -20,6 +20,9 @@ node server.js
 - Nach einem harten Crash fliegt die Dashcam durchs Auto: greifen und an die Scheibe halten (am PC: C).
 - Das Handy bleibt beim Aussteigen am Magneten.
 
+## Admin
+Wer sich **Gabriel** nennt, hat auf dem Handy die App **Admin Panel**: Tornado, Tsunami, NPC-Angriff, Gebäudebrand, Regen an/aus und „Alles stoppen“ – gilt für alle Spieler.
+
 ## Ordner
 - `assets/` – alle 3D-Modelle, Texturen, Himmel, Klingelton und Sprachansagen (alles lokal, kein Internet nötig)
 - `tools/` – Skripte zum Neu-Herunterladen (`download-assets.js`), Packen (`pack-assets.js`) und für die Ansagen (`make-voice.ps1`)
