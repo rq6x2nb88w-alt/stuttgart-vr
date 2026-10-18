@@ -1292,12 +1292,19 @@ const SND = {
   tap: mkBuf(.05, (t, r) => Math.sin(2 * Math.PI * 1800 * t) * Math.exp(-t * 90) * .4),
   whoosh: mkBuf(1.8, (t, r) => (r * .5 + Math.sin(2 * Math.PI * (120 + 500 * t) * t) * .3) * Math.sin(Math.PI * t / 1.8) * .7),
 };
+// Handy liegt im Auto, du bist weg (z.B. rausgeschleudert): der Anrufer hört, was am Handy los ist – nicht dich
+const phoneAud = { bus: null, away: false, pos: V(), wind: null, rain: null };
+const phoneBusNode = () => phoneAud.bus || (phoneAud.bus = AC.createGain());
 function playAt(buf, pos, vol = 1, ref = 6) {
   if (AC.state !== 'running') return;
   const o = new THREE.Object3D(); o.position.copy(pos); scene.add(o);
   const s = new THREE.PositionalAudio(listener); s.setBuffer(buf); s.setRefDistance(ref); s.setRolloffFactor(1.3); s.setVolume(vol); o.add(s);
   s.onEnded = () => { s.isPlaying = false; scene.remove(o); s.disconnect(); };
   s.play();
+  if (phoneAud.away) {                                                    // auch "ins Handy" (leiser, je weiter weg)
+    const d = pos.distanceTo(phoneAud.pos);
+    if (d < 60) { const s2 = AC.createBufferSource(), g2 = AC.createGain(); s2.buffer = buf; g2.gain.value = vol * Math.min(1, ref / Math.max(ref, d)) * .8; s2.connect(g2); g2.connect(phoneBusNode()); s2.start(); }
+  }
 }
 let engine = null;
 // Motor-Stimme: Sägezahn + Rechteck durch Tiefpass
@@ -2786,8 +2793,9 @@ function callAmbience(id, on) {
   const tr = p.pc.getTransceivers()[0]; if (!tr) return;
   if (on && !amb.dest) {
     amb.dest = AC.createMediaStreamDestination();
-    amb.mic = AC.createMediaStreamSource(net.mic); amb.mic.connect(amb.dest);
+    amb.mic = AC.createMediaStreamSource(net.mic); amb.micGain = AC.createGain(); amb.mic.connect(amb.micGain); amb.micGain.connect(amb.dest);
     amb.gain = AC.createGain(); amb.gain.gain.value = .7; listener.getInput().connect(amb.gain); amb.gain.connect(amb.dest);
+    amb.phoneGain = AC.createGain(); amb.phoneGain.gain.value = 0; phoneBusNode().connect(amb.phoneGain); amb.phoneGain.connect(amb.dest);   // Geräusche am Handy (wenn du weg bist)
   }
   tr.sender.replaceTrack(on ? amb.dest.stream.getAudioTracks()[0] : net.mic.getAudioTracks()[0]).catch(() => { });
   // die Stimme des Gesprächspartners nicht mitschicken (sonst hört er sich selbst als Echo)
@@ -2906,6 +2914,10 @@ function updPlayerCar(dt) {
   const inAir = !!c.air;
   if (inAir) { thr = 0; brk = 0; }   // in der Luft greifen die Räder nicht
   if (!sc && save.fuel <= 0) { if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Tank leer! Handy → Garage → Reparieren/holen bringt Benzin (50 €)', 3); } thr = 0; }   // Tank leer
+  if (!sc && c.totaled) {                                                // Totalschaden: Motor springt nicht an, qualmt
+    if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Totalschaden! Handy → Garage → Reparieren/holen', 3); } thr = 0;
+    if (Math.random() < dt * 6) { const f = g.localToWorld(V(0, 1, 1.6)); smoke.spawn(f.x, f.y, f.z, rand(-.4, .4), rand(1.5, 3), rand(-.4, .4), rand(3, 5)); }
+  }
   const maxV = sc ? 7 : 62, acc = sc ? 3.2 : 7.5;
   if (thr > .05) c.speed += (c.speed < 0 ? 14 : acc) * thr * dt;
   if (brk > .05) c.speed -= (c.speed > .5 ? (sc ? 6 : 14) : 4) * brk * dt;
@@ -2974,7 +2986,7 @@ function updPlayerCar(dt) {
     const rol = spring(S, 'r', clamp(S.lat * .004, -.05, .05), dt, 50, 7);
     const hv = clamp(spring(S, 'h', c.wheels.length ? sum / c.wheels.length * .6 : 0, dt, 110, 8), -.12, .07);
     const f = player.inCar ? .35 : 1;
-    ch.rotation.x = pit * f; ch.rotation.z = rol * f; ch.position.y = hv * f;
+    ch.rotation.x = pit * f + (c.bend?.x || 0); ch.rotation.z = rol * f + (c.bend?.z || 0); ch.position.y = hv * f;   // bend: vom Tornado schief gedrückt
     c.susOut = [pit, rol, hv];                                                 // für die anderen Spieler
   }
   // Räder drehen + lenken
@@ -3295,7 +3307,7 @@ function dentMeshes(root, wp, wd, depth, R) {
 // dent = { q: Punkt (Auto-Koordinaten), d: Richtung [x, z], s: Stärke 0..1 }; frame = Auto-Wurzel, root = Karosserie
 function applyDent(root, frame, dent) {
   frame.updateMatrixWorld(true);
-  const wp = frame.localToWorld(V(dent.q[0], dent.q[1], dent.q[2])), wd = V(dent.d[0], 0, dent.d[1]).transformDirection(frame.matrixWorld);
+  const wp = frame.localToWorld(V(dent.q[0], dent.q[1], dent.q[2])), wd = V(dent.d[0], dent.d[2] || 0, dent.d[1]).transformDirection(frame.matrixWorld);   // d = [x, z, y]
   dentMeshes(root, wp, wd, .04 + dent.s * .2, .4 + dent.s * .45);
 }
 function crackWindshield(c) {
@@ -3341,7 +3353,9 @@ function repairCar(c) {
   if (c.crack) { c.crack.parent?.remove(c.crack); c.crack.material.map.dispose(); c.crack.material.dispose(); c.crack = null; }
   if (c.doorGlass) for (const l of c.doorGlass) for (const g of l) g.m.visible = true;
   if (c.glassMat) c.glassMat.visible = true;
-  c.dmg = null; c.dents = [];
+  c.dmg = null; c.dents = []; c.bend = null; c.totaled = false; c.hits = 0;
+  for (const d of c.doors || []) d.pivot.visible = true;                // abgerissene Türen wieder dran
+  for (const j of c.junk || []) scene.remove(j); c.junk = [];
   if (dash.loose) dashMount(true);
 }
 // Schäden am Auto eines anderen Spielers anzeigen (Bitmaske aus seinem Zustand)
@@ -3357,6 +3371,7 @@ function applyRemoteDamage(p, dm) {
     }
   });
   (p.cmWins || []).forEach((l, i) => { if (l) for (const g of l) g.m.visible = !((dm >> 4) >> i & 1); });
+  (p.cmDoors || []).forEach((pv, i) => { if (!pv) return; const off = (dm >> 8) >> i & 1; if (off && pv.visible) spawnDebris(pv.getWorldPosition(V()), metaOf(p.carType).paint, 8, .25, 6); pv.visible = !off; });   // abgerissene Türen
 }
 
 function placeCityCar(c, dt) {
@@ -4247,11 +4262,67 @@ function updTsunami(dt) {
   }
   if (S.swept > 0 && player.inCar) { S.swept -= dt; pcar.group.position.addScaledVector(dir, 16 * (S.swept / 3.5) * dt); }
 }
+// ---------- Handy im Auto, du bist weg: Anrufer hört Sturm/Regen/Krachen/Leute am Handy, aber nicht mehr dich ----------
+function phoneLoop(key, buf, vol) {
+  if (!buf) return; let o = phoneAud[key];
+  if (!o) { if (vol <= 0) return; const s = AC.createBufferSource(), g = AC.createGain(); s.buffer = buf; s.loop = true; g.gain.value = 0; s.connect(g); g.connect(phoneBusNode()); s.start(); o = phoneAud[key] = { s, g }; }
+  o.g.gain.setTargetAtTime(Math.max(0, vol), AC.currentTime, .2);
+}
+function updPhoneAudio() {
+  if (AC.state !== 'running') return;
+  phoneG.getWorldPosition(phoneAud.pos);
+  const away = phone.call?.state === 'active' && !!amb.dest && phone.where === 'holder' && phoneAud.pos.distanceTo(headWorld) > 2.5;
+  if (away !== phoneAud.away) {
+    phoneAud.away = away; const t = AC.currentTime;
+    amb.micGain?.gain.setTargetAtTime(away ? 0 : 1, t, .05); amb.gain?.gain.setTargetAtTime(away ? 0 : .7, t, .05); amb.phoneGain?.gain.setTargetAtTime(away ? 1 : 0, t, .05);
+    if (away) msg('Dein Handy liegt im Auto – der Anrufer hört nur, was dort los ist', 3);
+  }
+  const T = disaster.tornado, k = away ? 1 : 0;
+  phoneLoop('wind', SND.wind, k * (T && T.cx !== undefined ? clamp(1 - Math.hypot(phoneAud.pos.x - T.cx, phoneAud.pos.z - T.cz) / 260, 0, 1) * (T.ef ? 2 : 1.2) : 0));
+  phoneLoop('rain', rainRoof?.buffer, k * weather.k * .5);
+  for (const p of net.players.values()) {                               // Stimmen von Leuten in der Nähe des Handys (nicht der Anrufer selbst)
+    if (!p.pa?.source || p.id === phone.call?.id) continue;
+    if (!p.phoneTap) { p.phoneTap = AC.createGain(); p.phoneTap.gain.value = 0; p.pa.source.connect(p.phoneTap); p.phoneTap.connect(phoneBusNode()); }
+    p.phoneTap.gain.setTargetAtTime(k * Math.max(0, 1 - p.headM.getWorldPosition(v1).distanceTo(phoneAud.pos) / 18) * .9, AC.currentTime, .1);
+  }
+}
+// ---------- EF5 zerschmettert Autos: Dach/Seiten eingedrückt, Karosserie schief, Scheiben weg, Türen reißen ab ----------
+function addDent(c, q, d, s) {
+  const dent = { q: [r2(q.x), r2(q.y), r2(q.z)], d: [r2(d.x), r2(d.z), r2(d.y)], s: r2(s) };
+  applyDent(c.chassis, c.group, dent); c.dents ||= []; if (c.dents.length < 12) c.dents.push(dent);
+}
+function ripDoor(c, i) {
+  const d = c.doors[i]; if (!d || !d.pivot.visible) return;
+  const D = c.dmg || (c.dmg = { hl: 0, tl: 0, ws: 0, wb: 0, all: 0 }); D.off = (D.off || 0) | (1 << i);
+  d.pivot.updateMatrixWorld(true); const cl = d.pivot.clone(true); d.pivot.getWorldPosition(cl.position); d.pivot.getWorldQuaternion(cl.quaternion); scene.add(cl);
+  d.pivot.visible = false; c.junk ||= []; c.junk.push(cl);
+  flying.push({ o: cl, vel: V(rand(-14, 14), rand(6, 14), rand(-14, 14)), spin: V(rand(-8, 8), rand(-8, 8), rand(-8, 8)), t: 0, b: 0 });
+  playAt(SND.crash, cl.position, 1.4, 10);
+}
+function tornadoHit(c) {
+  if (!c.chassis || c.chassis === c.vis) return;
+  const h = c.half, roof = Math.random() < .35, a = rand(0, Math.PI * 2);
+  if (roof) addDent(c, V(rand(-h.x, h.x) * .6, h.y - .05, rand(-h.z, h.z) * .4), V(0, -1, 0), rand(.6, 1));   // Dach eingedrückt
+  else { const dx = Math.sin(a), dz = Math.cos(a), s = Math.min(Math.abs(h.x / (dx || 1e-6)), Math.abs(h.z / (dz || 1e-6))); addDent(c, V(dx * s, rand(.4, .9), dz * s), V(dx, rand(-.3, .2), dz), rand(.7, 1)); }
+  const D = c.dmg || (c.dmg = { hl: 0, tl: 0, ws: 0, wb: 0, all: 0 }), wp = c.group.position.clone();
+  if (!D.all) { D.all = 1; D.hl = 1; D.tl = 1; glassNet(c, wp); if (c.headMat) c.headMat.emissiveIntensity = 0; if (c.brakeMat) c.brakeMat.emissiveIntensity = 0; playAt(SND.glass, wp, 1.5, 6); }
+  c.bend = { x: clamp((c.bend?.x || 0) + rand(-.035, .035), -.1, .1), z: clamp((c.bend?.z || 0) + rand(-.05, .05), -.14, .14) };   // Karosserie wird schief
+  if (Math.random() < .4) ripDoor(c, Math.floor(Math.random() * c.doors.length));
+  c.hits = (c.hits || 0) + 1; if (c.hits >= 2 && !c.totaled) { c.totaled = true; D.tot = 1; }
+  playAt(SND.crash, wp, 1.6, 10); if (player.inCar) hands.forEach(h => haptic(h, 1, 200));
+}
+// aus dem Auto geschleudert: du fliegst und überschlägst dich
+function ejectPlayer(vel) {
+  if (player.inCar) { player.inCar = false; for (const h of hands) if (h.held?.type === 'wheel') h.held = null; }
+  if (player.ride) player.ride = null;
+  player.fly = { phase: 'eject', t: 0, vel, spin: (Math.random() < .5 ? -1 : 1) * rand(5, 7.5), rot: 0, roll: rand(-.6, .6), yaw: dolly.rotation.y };
+  msg('Du wirst aus dem Auto geschleudert!', 2.5); hands.forEach(h => haptic(h, 1, 300)); playAt(SND.glass, headWorld, 1.2, 4);
+}
 // Spieler im EF5-Tornado: kreist im Trichter nach oben (bis 70 m), wird dann weggeschleudert und landet hart
 function updPlayerFly(dt) {
   const F = player.fly; if (!F) return;
-  if (player.dead || seated()) { player.fly = null; return; }
-  const T = disaster.tornado, hp = camera.getWorldPosition(v1); F.t += dt;
+  if (player.dead || seated()) { player.fly = null; dolly.rotation.x = dolly.rotation.z = 0; return; }
+  const T = disaster.tornado, hp = camera.getWorldPosition(v1).clone(); F.t += dt;
   let tx, ty, tz;
   if (F.phase === 'up') {
     if (T) { F.cx = T.cx; F.cz = T.cz; }
@@ -4265,15 +4336,22 @@ function updPlayerFly(dt) {
   } else {
     F.vel.y -= 9.8 * dt; tx = hp.x + F.vel.x * dt; tz = hp.z + F.vel.z * dt; ty = hp.y + F.vel.y * dt;
     const gy = surfaceAt(tx, tz) + 1.6;
+    if (F.phase === 'eject') F.rot += F.spin * dt;                       // überschlägt sich (360°)
     if (ty <= gy) {                                                     // Landung
       ty = gy; const v = -F.vel.y; player.fly = null;
       player.hp -= clamp(v * 1.5, 10, 75); hurt = 1; lastHurt = time; hands.forEach(h => haptic(h, 1, 300)); playAt(SND.hit, V(tx, gy, tz), 1.6);
       if (player.hp <= 0) die('Vom Tornado weggeschleudert'); else msg('Hart gelandet! Noch ' + Math.round(player.hp) + ' HP', 3);
     }
   }
+  // Drehung der Welt um den Kopf (Überschlag) – nach der Landung wieder aufrecht
+  if (F.phase === 'eject') {
+    dolly.rotation.order = 'YXZ';
+    if (player.fly) dolly.rotation.set(F.rot, F.yaw, F.rot * F.roll); else dolly.rotation.set(0, F.yaw, 0);
+    dolly.updateMatrixWorld(true); camera.getWorldPosition(hp);
+  }
   dolly.position.x += tx - hp.x; dolly.position.y += ty - hp.y; dolly.position.z += tz - hp.z;
   if (!player.fly) walk(0, 0, 0, dt);                                     // nicht in einer Wand landen
-  vigTarget = .55;                                                      // Komfort-Rand gegen Übelkeit
+  vigTarget = F.phase === 'eject' ? .8 : .55;                           // Komfort-Rand gegen Übelkeit
 }
 // Auto im EF5-Tornado: kreist hoch und dreht sich, dann wird es weggeschleudert (Landung = normale Flugphysik + Schaden)
 function carFlight(c, dt) {
@@ -4283,6 +4361,10 @@ function carFlight(c, dt) {
   g.position.set(F.cx + Math.cos(F.ang) * F.r, groundAt(F.cx, F.cz) + F.h, F.cz + Math.sin(F.ang) * F.r);
   c.heading += dt * 3.2; c.slS = Math.sin(F.t * 2.1) * .5; c.sdS = Math.cos(F.t * 1.6) * .6; c.speed = 0; c.yawRate = 3.2;
   g.rotation.set(-c.slS, c.heading, c.sdS, 'YXZ'); g.updateMatrixWorld(true);
+  // Trümmer und Wucht zerschmettern das Auto
+  F.hitT = (F.hitT ?? .5) - dt; if (F.hitT <= 0) { F.hitT = rand(.5, .9); tornadoHit(c); }
+  // du (bzw. deine Mitfahrer bei sich) kannst rausgeschleudert werden
+  if (player.inCar && !F.ejChk && F.t > 1.4) { F.ejChk = true; if (Math.random() < .65) ejectPlayer(V(-Math.sin(F.ang) * 17 + Math.cos(F.ang) * 9, rand(8, 13), Math.cos(F.ang) * 17 + Math.sin(F.ang) * 9)); }
   if (F.t > 5 || !T) {
     c.fly = null; c.air = true; c.airT = 0; c.vy = rand(6, 10);
     c.heading = F.ang + Math.PI / 2 + rand(-.4, .4); c.speed = rand(20, 28); c.yawRate = 0;
@@ -5208,6 +5290,7 @@ function callAudio(id, on) {
   callAmbience(id, on);                                                 // der andere hört auch deine Umgebung
   const p = net.players.get(id); if (!p?.pa) return;
   if (on && cp.conn && cp.mesh) { cp.mesh.add(p.pa); p.pa.position.set(0, 0, 0); }   // CarPlay: Stimme aus den Auto-Lautsprechern
+  else if (on && phone.where === 'holder' && !player.inCar) { phoneG.add(p.pa); p.pa.position.set(0, 0, 0); }   // Handy liegt im Auto: Stimme kommt von dort
   else if (on) { camera.add(p.pa); p.pa.position.set(0, 0, -.15); } else { p.headM.add(p.pa); p.pa.position.set(0, 0, 0); }
 }
 
@@ -5246,8 +5329,10 @@ function myState() {
   if (player.ride) st.rd = [player.ride.id, player.ride.seat];
   if (c.wins?.[0] > .01) st.wd = r2(c.wins[0]);                       // mein Fahrerfenster
   if (player.ride?.win > .01) st.rw = r2(player.ride.win);              // mein Fenster als Mitfahrer
-  if (c.dmg) { const D = c.dmg; st.dm = (D.hl ? 1 : 0) | (D.tl ? 2 : 0) | (D.ws ? 4 : 0) | (D.all ? 8 : 0) | (D.wb << 4); }
-  if (c.dents?.length) st.dl = c.dents.flatMap(d => [...d.q, ...d.d, d.s]);
+  if (c.dmg) { const D = c.dmg; st.dm = (D.hl ? 1 : 0) | (D.tl ? 2 : 0) | (D.ws ? 4 : 0) | (D.all ? 8 : 0) | (D.wb << 4) | ((D.off || 0) << 8) | (D.tot ? 4096 : 0); }
+  if (c.dents?.length) st.dl = c.dents.flatMap(d => [...d.q, d.d[0], d.d[1], d.d[2] || 0, d.s]);   // je Delle 7 Zahlen
+  if (c.bend) st.bd = [r3(c.bend.x), r3(c.bend.z)];                     // schiefe Karosserie
+  if (c.fly) st.fly = 1;                                                // Auto wird gerade vom Tornado herumgewirbelt
   if (wanted.stars) st.ws = wanted.stars;                                // Fahndungssterne (Polizisten sehen dich)
   if (wanted.cops.length) st.cops = wanted.cops.map(c => [r2(c.g.position.x), r2(c.g.position.z), r2(c.yaw)]);
   if (player.inCar && vehicle.type !== 'scooter') st.fu = r2(save.fuel);
@@ -5288,6 +5373,8 @@ function updNet(dt) {
   if (!net.online) { if (player.ride) leaveRide('Verbindung weg – ausgestiegen'); return; }
   // erst alle Autos bewegen, dann Mitfahrer + Avatare daran festmachen (sonst zittern sie ein Bild hinterher)
   for (const p of net.players.values()) updRemoteCar(p, dt);
+  // Mitfahrer: wirbelt der Tornado das Auto herum, kannst du rausgeschleudert werden
+  if (player.ride) { const o = net.players.get(player.ride.id); if (o?.st?.fly && !player.ride.ejChk) { player.ride.ejChk = true; if (Math.random() < .65) ejectPlayer(V(rand(-16, 16), rand(8, 13), rand(-16, 16))); } }
   if (player.ride) { rideSeat(); camera.getWorldPosition(headWorld); }
   net.sendT -= dt;
   if (net.sendT <= 0) { net.sendT = .08; netSend(myState()); }
@@ -5453,7 +5540,7 @@ function updRemoteCar(p, dt) {
   if (p.cmCh) {
     const f = player.ride?.id === p.id ? .35 : 1, L = p.sl || (p.sl = {});
     const sr = spring(L, 'r', 0, dt, 50, 7), sh = spring(L, 'h', 0, dt, 110, 8);   // Wippen nach Türschlag
-    p.cmCh.rotation.x = k[6] * f; p.cmCh.rotation.z = (k[7] + sr) * f; p.cmCh.position.y = (k[8] + sh) * f;
+    p.cmCh.rotation.x = k[6] * f + (s.bd ? s.bd[0] : 0); p.cmCh.rotation.z = (k[7] + sr) * f + (s.bd ? s.bd[1] : 0); p.cmCh.position.y = (k[8] + sh) * f;   // bd = schiefe Karosserie
   }
   // Räder drehen sich mit dem Tempo
   for (const w of p.cmWheels) { const sp = w.children[0]; if (sp) sp.rotation.x += k[9] / .34 * dt; }
@@ -5477,12 +5564,13 @@ function updRemoteCar(p, dt) {
     setGlass(p.cmWins[i], p.winVal[i]);
   }
   // Unfallschäden des Besitzers: Dellen (Liste), Lichter/Scheiben (Bitmaske); repariert -> Auto neu aufbauen
-  const dl = s.dl || [], nd = dl.length / 6, dm = s.dm || 0;
+  const dl = s.dl || [], nd = dl.length / 7, dm = s.dm || 0;
   if (nd < p.dentN || (dm === 0 && p.dmSeen)) { p.carQ = -1; }
   else {
-    if (nd > p.dentN) { const full = cm.isLOD ? cm.levels[0].object : cm, root = full.getObjectByName('chassis') || full; for (let i = p.dentN; i < nd; i++) applyDent(root, cm, { q: dl.slice(i * 6, i * 6 + 3), d: dl.slice(i * 6 + 3, i * 6 + 5), s: dl[i * 6 + 5] }); p.dentN = nd; }
+    if (nd > p.dentN) { const full = cm.isLOD ? cm.levels[0].object : cm, root = full.getObjectByName('chassis') || full; for (let i = p.dentN; i < nd; i++) applyDent(root, cm, { q: dl.slice(i * 7, i * 7 + 3), d: dl.slice(i * 7 + 3, i * 7 + 6), s: dl[i * 7 + 6] }); p.dentN = nd; }
     if (dm !== p.dmSeen) { applyRemoteDamage(p, dm); p.dmSeen = dm; }
   }
+  if (dm & 4096 && Math.random() < dt * 5) { const f = cm.localToWorld(V(0, 1, 1.6)); smoke.spawn(f.x, f.y, f.z, rand(-.4, .4), rand(1.5, 3), rand(-.4, .4), rand(3, 5)); }   // Totalschaden: Motor qualmt
   // Auto-Alarm des Besitzers: Licht + Blinker blinken, Hupe piept, Displays zeigen "!"
   const al = !!s.al;
   if (al !== p.alarmOn) { p.alarmOn = al; for (const sc of p.cmScreens) sc.m.material = al ? alMat : sc.orig; if (!al) carLights(cm, false); }
@@ -6263,7 +6351,7 @@ function frame() {
     hurt = Math.max(0, hurt - dt * 1.5); deathFx.material.opacity = hurt * .45 + (player.hp < 35 ? .12 + Math.sin(time * 6) * .06 : 0);
   }
   updWeather(dt); updMission(dt); updVillain(dt); updIntro(dt); updDisasters(dt);
-  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt);
+  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio();
   saveT -= dt; if (saveT <= 0) { saveT = 5; writeSave(); }
   hud.visible = time < hudUntil;
   boomLight.intensity *= Math.pow(.02, dt); muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 120);
