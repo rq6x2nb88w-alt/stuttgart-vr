@@ -3129,13 +3129,13 @@ function dashMount(quiet) {
   if (!dash.body) return;
   if (dash.held?.held?.type === 'dash') dash.held.held = null;
   dash.pivot.add(dash.body); dash.body.position.set(0, -.026, 0); dash.body.rotation.set(0, 0, 0);
-  Object.assign(dash, { loose: false, held: null, sp: 0, sv: 0, rp: 0, rv: 0 });
+  Object.assign(dash, { loose: false, held: null, out: false, sp: 0, sv: 0, rp: 0, rv: 0 });
   if (!quiet) { playAt(SND.click, dash.root.getWorldPosition(V()), .8, 2); msg('Dashcam wieder angebracht', 2); }
 }
 // harter Aufprall: Dashcam reißt ab und fliegt (im Auto) Richtung Aufprall, prallt ab, liegt dann irgendwo
 function dashFly(imp, p) {
   if (!dash.body) return;
-  if (dash.held) return;
+  if (dash.held || dash.out) return;
   const ch = dash.ch; ch.updateMatrixWorld(true); dash.body.updateMatrixWorld(true);
   if (!dash.loose) { ch.attach(dash.body); dash.loose = true; msg(xrOn() ? 'Die Dashcam ist abgerissen! Greifen und an die Scheibe halten' : 'Die Dashcam ist abgerissen! C = wieder anbringen', 3.5); }
   const lp = ch.worldToLocal(p.clone()); lp.y = 0; if (lp.lengthSq() < .01) lp.set(0, 0, 1); lp.normalize();
@@ -3154,6 +3154,40 @@ function dashPhysics(dt) {
     const f = 1 - Math.min(1, dt * 6); v.x *= f; v.z *= f; dash.spin.multiplyScalar(1 - Math.min(1, dt * 5)); if (Math.abs(v.y) < .35) v.y = 0;
   }
   if (hit > .9) { dash.spin.multiplyScalar(.7); playAt(SND.dashHit, b.getWorldPosition(V()), Math.min(1, hit / 4), 2); }
+  // durch eine kaputte Scheibe / offene oder fehlende Tür raus aus dem Auto
+  if (hit > 3 && dashCanExit(b.position) && Math.random() < .7) dashOut();
+}
+function dashCanExit(p) {
+  const c = pcar, B = dash.bounds, D = c.dmg || {}, glassGone = D.all || !c.glassMat.visible;
+  if (glassGone) return true;
+  if (p.z >= B.z1 - .01 && D.ws && Math.abs(c.speed) > 8) return true;   // durch die gesprungene Frontscheibe (bei Tempo)
+  if (Math.abs(p.x) >= B.x - .01) {                                     // Seite: Fenster kaputt/offen oder Tür offen/weg
+    const side = Math.sign(p.x), i = c.doors.findIndex(d => d.side === side && Math.abs(d.pivot.position.z - p.z) < 1.2);
+    const d = c.doors[i]; if (d && (!d.pivot.visible || d.a > .3 || ((D.wb >> i) & 1) || (c.wins?.[i] || 0) > .6)) return true;
+  }
+  return false;
+}
+// Dashcam fliegt aus dem Auto: ab jetzt eigene Flugbahn in der Welt (Boden, Abprallen), nimmt weiter auf
+function dashOut() {
+  const c = pcar, b = dash.body, q = new THREE.Quaternion();
+  dash.ch.getWorldQuaternion(q);
+  const v = dash.vel.clone().applyQuaternion(q).add(V(Math.sin(c.heading) * c.speed, c.vy || 0, Math.cos(c.heading) * c.speed));
+  if (c.fly) v.add(V(-Math.sin(c.fly.ang) * 16, rand(4, 9), Math.cos(c.fly.ang) * 16));   // im Tornado: mit Schwung raus
+  scene.attach(b); dash.vel.copy(v); dash.out = true;
+  playAt(SND.glass, b.getWorldPosition(V()), .8, 3); msg('Die Dashcam ist aus dem Auto geflogen!', 3);
+}
+function dashWorldPhysics(dt) {
+  const b = dash.body, v = dash.vel;
+  v.y -= 9.8 * dt; b.position.addScaledVector(v, dt);
+  b.rotation.x += dash.spin.x * dt; b.rotation.y += dash.spin.y * dt; b.rotation.z += dash.spin.z * dt;
+  const gy = surfaceAt(b.position.x, b.position.z) + .03;
+  if (b.position.y <= gy) {
+    b.position.y = gy;
+    if (v.y < -1.5) { playAt(SND.dashHit, b.position, Math.min(1, -v.y / 6), 3); v.y *= -.35; dash.spin.multiplyScalar(.6); }
+    else { v.y = 0; dash.spin.multiplyScalar(1 - Math.min(1, dt * 6)); }
+    const f = 1 - Math.min(1, dt * 5); v.x *= f; v.z *= f;                // rutscht aus
+  }
+  pushOutOf(b.position, .05);
 }
 function dashGrab(h, p) {
   if (!dash.loose || dash.held || !dash.body) return false;
@@ -3164,7 +3198,10 @@ function dashRelease(h) {
   if (dash.held !== h) return;
   dash.held = null;
   if (dash.body.getWorldPosition(v1).distanceTo(dash.root.getWorldPosition(v2)) < .22) { dashMount(); return; }
-  dash.ch.attach(dash.body); dash.vel.set(0, 0, 0); dash.spin.set(0, 0, 0);   // fallen lassen
+  // fallen lassen: im Auto bleibt sie im Auto, draußen fällt sie auf den Boden
+  const B = dash.bounds, l = dash.ch.worldToLocal(dash.body.getWorldPosition(v1).clone()), inside = B && Math.abs(l.x) < B.x + .1 && l.y > B.y0 - .2 && l.y < B.y1 + .1 && l.z > B.z0 - .1 && l.z < B.z1 + .1;
+  if (inside) { dash.ch.attach(dash.body); dash.out = false; } else { scene.attach(dash.body); dash.out = true; }
+  dash.vel.set(0, 0, 0); dash.spin.set(0, 0, 0);
 }
 // Knopf an der Dashcam (oder C am PC): Aufnahme starten / stoppen; abgerissen -> am PC wieder anbringen
 function dashButton() {
@@ -3235,7 +3272,7 @@ function updDash(dt) {
       const d = dash.btn.getWorldPosition(v1).distanceTo(h.ctrl.getWorldPosition(v2));
       if (d < .035 && !h.dashPoke) { h.dashPoke = true; haptic(h, .5, 40); dashButton(); } else if (d > .07) h.dashPoke = false;
     }
-  } else if (!dash.held) dashPhysics(dt);
+  } else if (!dash.held) { if (dash.out) dashWorldPhysics(dt); else dashPhysics(dt); }
   dash.led.material.color.set(dash.rec ? (Math.floor(time * 2) % 2 ? 0xff1a1a : 0x550000) : 0x0a3a12);
   dash.scrT -= dt;
   if (dash.scrT <= 0 && headWorld.distanceTo(dash.root.getWorldPosition(v1)) < 3) {   // kleiner Bildschirm hinten: REC-Zeit oder "Bereit"
@@ -4308,6 +4345,12 @@ function tornadoHit(c) {
   if (!D.all) { D.all = 1; D.hl = 1; D.tl = 1; glassNet(c, wp); if (c.headMat) c.headMat.emissiveIntensity = 0; if (c.brakeMat) c.brakeMat.emissiveIntensity = 0; playAt(SND.glass, wp, 1.5, 6); }
   c.bend = { x: clamp((c.bend?.x || 0) + rand(-.035, .035), -.1, .1), z: clamp((c.bend?.z || 0) + rand(-.05, .05), -.14, .14) };   // Karosserie wird schief
   if (Math.random() < .4) ripDoor(c, Math.floor(Math.random() * c.doors.length));
+  // Dashcam reißt ab und fliegt oft durch die kaputten Scheiben aus dem Auto
+  if (c === pcar && dash.body && !dash.out && !dash.held) {
+    if (!dash.loose) dashFly(20, c.group.localToWorld(V(rand(-1, 1), .8, rand(-1, 1))));
+    else dash.vel.add(V(rand(-6, 6), rand(2, 7), rand(-6, 6)));
+    if (D.all && Math.random() < .45) dashOut();
+  }
   c.hits = (c.hits || 0) + 1; if (c.hits >= 2 && !c.totaled) { c.totaled = true; D.tot = 1; }
   playAt(SND.crash, wp, 1.6, 10); if (player.inCar) hands.forEach(h => haptic(h, 1, 200));
 }
@@ -4839,11 +4882,11 @@ function setRadio(i) { radio.st = save.radio = i; radio.on = true; radio.step = 
 const fuelInfo = { warned: false, filling: false };
 const nearPump = () => { const p = pcar.group.position; return pumps.some(q => Math.hypot(q.x - p.x, q.z - p.z) < 5.5); };
 const canFuel = () => player.inCar && vehicle.type !== 'scooter' && Math.abs(pcar.speed) < .5 && save.fuel < .97 && nearPump();
-const PRICE_L = 1.79, TANK_L = 50;
+const PRICE_L = 1.79, TANK_L = 70;
 function startFuel() { if (!canFuel()) return; if (money < 2) return msg('Zu wenig Geld zum Tanken', 2); fuelInfo.filling = true; msg('Tankt …', 2); playAt(SND.click, pcar.group.position, .8, 3); }
 function updFuel(dt) {
   if (vehicle.type === 'scooter') return;
-  if (player.inCar && !pcar.dead) save.fuel = Math.max(0, save.fuel - (Math.abs(pcar.speed) / 26000 + .0000035) * dt);
+  if (player.inCar && !pcar.dead) save.fuel = Math.max(0, save.fuel - (Math.abs(pcar.speed) / 80000 + .0000012) * dt);   // großer Tank: reicht ca. 80 km
   if (save.fuel < .15 && !fuelInfo.warned && player.inCar) { fuelInfo.warned = true; msg('Tank fast leer – fahr zur Tankstelle!', 4); uiTone(SND.ding); }
   if (save.fuel > .3) fuelInfo.warned = false;
   if (fuelInfo.filling) {
