@@ -1,0 +1,15 @@
+.git
+.git/**
+.wrangler
+node_modules
+worker
+wrangler.toml
+server.js
+package.json
+package-lock.json
+tools
+*.md
+.cert.pem
+.key.pem
+.assetsignore
+.gitignore

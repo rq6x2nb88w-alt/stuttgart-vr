@@ -1,0 +1,20 @@
+# Cloudflare-Hosting für Stuttgart VR (kostenlos, ohne Kreditkarte)
+# Hochladen:  npx wrangler deploy      Lokal testen:  npx wrangler dev
+name = "stuttgart-vr"
+main = "worker/index.js"
+compatibility_date = "2025-09-01"
+
+[build]
+command = "node worker/list-cars.js"
+
+[assets]
+directory = "."
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "LOBBY"
+class_name = "Lobby"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Lobby"]
