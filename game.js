@@ -1313,7 +1313,7 @@ function engineVoice(lp = 380) {
   o1.type = 'sawtooth'; o2.type = 'square'; f.type = 'lowpass'; f.frequency.value = lp; g.gain.value = .25;
   o1.connect(f); o2.connect(f); f.connect(g); o1.start(); o2.start();
   const pa = new THREE.PositionalAudio(listener); pa.setNodeSource(g);
-  return { o1, o2, f, pa, stop() { try { o1.stop(); o2.stop(); g.disconnect(); } catch (e) { } } };
+  return { o1, o2, f, g, pa, stop() { try { o1.stop(); o2.stop(); g.disconnect(); } catch (e) { } } };
 }
 function ensureEngine() {
   if (engine || AC.state !== 'running') return;
@@ -1325,10 +1325,10 @@ function remoteEngine(p, k, drive) {
   const near = drive && p.carMesh.position.distanceToSquared(headWorld) < 90 * 90;
   if (!p.eng) { if (!near) return; p.eng = engineVoice(900); p.eng.pa.setRefDistance(7); p.eng.pa.setRolloffFactor(1.1); }
   const e = p.eng; if (e.pa.parent !== p.carMesh) p.carMesh.add(e.pa);
-  const s = Math.abs(k[9]), inside = player.ride?.id === p.id;
-  e.o1.frequency.value = 38 + s * 3.2; e.o2.frequency.value = 19 + s * 1.6;
-  e.f.frequency.value = inside ? 380 : 900;                           // drinnen dumpf, draußen offener
-  e.pa.setVolume(near ? (inside ? .5 : 1) : 0);
+  const s = Math.abs(k[9]), inside = player.ride?.id === p.id, ms = p.st?.tn?.[3] || 0, kf = 1 - ms * .07;   // ms = Motor-Tuning-Stufe
+  e.o1.frequency.value = (38 + s * 3.2) * kf; e.o2.frequency.value = (19 + s * 1.6) * kf;
+  e.f.frequency.value = (inside ? 380 : 900) + ms * 100;              // drinnen dumpf, draußen offener
+  e.pa.setVolume(near ? (inside ? .5 : 1) * (1 + ms * .12) : 0);
 }
 const npcEng = []; let npcEngT = 0;
 function updNpcEngines(dt) {
@@ -1343,7 +1343,48 @@ function updNpcEngines(dt) {
   }
   for (const v of npcEng) if (v.car) { const s = Math.abs(v.car.speed); v.o1.frequency.value = 45 + s * 3; v.o2.frequency.value = 22 + s * 1.5; v.pa.setVolume(.6); }
 }
-const ring = new Audio('assets/klingelton.mp3'); ring.loop = true;
+// ---------- Klingeltöne: Standard, eigene Marimba-Töne (selbst komponiert + erzeugt), eigene Dateien aus assets/klingeltoene/ ----------
+// Melodien: [Zeit in Takt-Schlägen, MIDI-Ton]; Klang: Marimba (kurz, warm), Glocke oder Piepser
+const RING_SYNTH = [
+  { name: 'Marimba Morgen', bpm: 132, kind: 'marimba', len: 8, n: [[0, 72], [.5, 76], [1, 79], [1.5, 84], [2, 81], [2.5, 79], [3, 76], [3.5, 79], [4, 74], [4.5, 77], [5, 81], [5.5, 84], [6, 83], [6.5, 79], [7, 74]] },
+  { name: 'Wellen', bpm: 104, kind: 'marimba', len: 8, n: [[0, 67], [.5, 74], [1, 71], [1.5, 79], [2, 76], [3, 74], [4, 69], [4.5, 76], [5, 72], [5.5, 81], [6, 79], [7, 76]] },
+  { name: 'Kristall', bpm: 120, kind: 'bell', len: 8, n: [[0, 84], [.5, 88], [1, 91], [2, 89], [2.5, 86], [3, 84], [4, 86], [4.5, 89], [5, 93], [6, 91], [7, 88]] },
+  { name: 'Sonnenaufgang', bpm: 90, kind: 'marimba', len: 8, n: [[0, 60], [.5, 64], [1, 67], [1.5, 72], [2, 76], [2.5, 79], [3, 84], [4, 62], [4.5, 65], [5, 69], [5.5, 74], [6, 77], [6.5, 81], [7, 86]] },
+  { name: 'Pop', bpm: 140, kind: 'marimba', len: 8, n: [[0, 76], [.5, 76], [1, 79], [2, 76], [2.5, 74], [3, 72], [4, 74], [4.5, 74], [5, 77], [6, 76], [6.5, 72], [7, 74]] },
+  { name: 'Retro Piep', bpm: 150, kind: 'beep', len: 8, n: [[0, 88], [.5, 88], [1, 91], [1.5, 88], [4, 88], [4.5, 88], [5, 91], [5.5, 88]] },
+];
+const RINGS = [{ name: 'Standard', file: 'assets/klingelton.mp3' }, ...RING_SYNTH.map(s => ({ name: s.name, synth: s }))];
+AS.listDir('assets/klingeltoene/').then(l => { for (const f of l) if (/\.(mp3|ogg|wav|m4a)$/i.test(f)) RINGS.push({ name: f.replace(/\.\w+$/, ''), file: 'assets/klingeltoene/' + f }); });
+function ringBuffer(s) {
+  if (s.buf) return s.buf;
+  const beat = 60 / s.bpm, dur = s.len * beat;
+  s.buf = mkBuf(dur, t => {
+    let v = 0;
+    for (const [b, m] of s.n) {
+      const u = t - b * beat; if (u < 0 || u > 1.6) continue;
+      const f = 440 * Math.pow(2, (m - 69) / 12), a = Math.min(1, u * 400);
+      if (s.kind === 'marimba') v += (Math.sin(2 * Math.PI * f * u) * Math.exp(-u * 7) + .35 * Math.sin(2 * Math.PI * f * 4 * u) * Math.exp(-u * 30) + .12 * Math.sin(2 * Math.PI * f * 10 * u) * Math.exp(-u * 70)) * a;
+      else if (s.kind === 'bell') v += (Math.sin(2 * Math.PI * f * u) * Math.exp(-u * 3) + .5 * Math.sin(2 * Math.PI * f * 2.76 * u) * Math.exp(-u * 6) + .25 * Math.sin(2 * Math.PI * f * 5.4 * u) * Math.exp(-u * 12)) * a * .7;
+      else if (u < .18) v += Math.sign(Math.sin(2 * Math.PI * f * u)) * .5 * Math.min(1, (.18 - u) * 60);
+    }
+    return v * .28;
+  });
+  return s.buf;
+}
+// spielt den gewählten Klingelton in Dauerschleife (wie früher das <audio>-Element: play/pause/currentTime)
+const ring = {
+  el: null, src: null,
+  cur() { return RINGS.find(r => r.name === save.ring) || RINGS[0]; },
+  play() {
+    this.pause(); const r = this.cur();
+    if (r.synth) { if (AC.state !== 'running') AC.resume(); const s = AC.createBufferSource(); s.buffer = ringBuffer(r.synth); s.loop = true; s.connect(AC.destination); s.start(); this.src = s; return Promise.resolve(); }
+    if (!this.el || this.el.dataset.f !== r.file) { this.el = new Audio(r.file); this.el.loop = true; this.el.dataset.f = r.file; }
+    this.el.currentTime = 0; return this.el.play();
+  },
+  pause() { if (this.src) { try { this.src.stop(); } catch (e) { } this.src = null; } if (this.el) this.el.pause(); },
+  set currentTime(v) { if (this.el) this.el.currentTime = v; },
+  preview(r) { save.ring = r.name; this.play().catch(() => { }); clearTimeout(this.pt); this.pt = setTimeout(() => { if (!phone.call || phone.call.state !== 'ring') this.pause(); }, 3500); },   // auswählen + 3,5 s anhören
+};
 
 // ===================================================================
 // Feuer & Explosionen
@@ -1684,6 +1725,10 @@ function icon(g, kind, x, y, s = 1) {
   if (kind === 'immo') { g.beginPath(); g.moveTo(0, -24); g.lineTo(24, -2); g.lineTo(18, -2); g.lineTo(18, 22); g.lineTo(-18, 22); g.lineTo(-18, -2); g.lineTo(-24, -2); g.closePath(); g.fill(); g.fillStyle = '#5e35b1'; g.fillRect(-6, 6, 12, 16); }
   if (kind === 'tiere') { g.beginPath(); g.arc(0, 8, 11, 0, 7); g.fill(); for (const [x, y] of [[-15, -6], [-5, -15], [6, -15], [15, -6]]) { g.beginPath(); g.arc(x, y, 6, 0, 7); g.fill(); } }
   if (kind === 'radio') { g.beginPath(); g.roundRect(-24, -12, 48, 32, 6); g.fill(); g.lineWidth = 4; g.beginPath(); g.moveTo(-14, -12); g.lineTo(12, -24); g.stroke(); g.fillStyle = '#333'; g.beginPath(); g.arc(-9, 4, 8, 0, 7); g.fill(); g.fillRect(4, -4, 14, 4); g.fillRect(4, 6, 14, 4); }
+  if (kind === 'bank') { g.beginPath(); g.moveTo(0, -24); g.lineTo(24, -10); g.lineTo(-24, -10); g.closePath(); g.fill(); for (const x of [-16, -5.5, 5.5, 16]) g.fillRect(x - 3, -6, 6, 20); g.fillRect(-24, 16, 48, 6); }
+  if (kind === 'set') { g.lineWidth = 7; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(Math.cos(a) * 12, Math.sin(a) * 12); g.lineTo(Math.cos(a) * 23, Math.sin(a) * 23); g.stroke(); } g.beginPath(); g.arc(0, 0, 15, 0, 7); g.fill(); g.fillStyle = '#607d8b'; g.beginPath(); g.arc(0, 0, 7, 0, 7); g.fill(); }
+  if (kind === 'money') { g.beginPath(); g.roundRect(-26, -15, 52, 30, 5); g.fill(); g.fillStyle = '#1b5e20'; g.beginPath(); g.arc(0, 0, 9, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('€', 0, 1); }
+  if (kind === 'power') { g.lineWidth = 5; g.beginPath(); g.arc(0, 2, 17, -Math.PI * .3, Math.PI * 1.3); g.stroke(); g.beginPath(); g.moveTo(0, -22); g.lineTo(0, 2); g.stroke(); }
   if (kind === 'siren') { g.fillStyle = '#ff2a2a'; g.beginPath(); g.arc(-8, 2, 10, Math.PI, 0); g.fill(); g.fillStyle = '#2a6bff'; g.beginPath(); g.arc(10, 2, 10, Math.PI, 0); g.fill(); g.fillStyle = '#fff'; g.fillRect(-22, 4, 44, 8); }
   g.restore();
 }
@@ -1697,19 +1742,19 @@ function drawApp() {
     g.fillStyle = a === 'home' ? gr : '#111318'; g.fillRect(0, 0, PW, PH);
   }
   if (a === 'home') {
-    tx(g, hhmm(), PW / 2, 150, 76, '#fff', 'center', 300);
-    tx(g, new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }), PW / 2, 205, 20);
+    tx(g, hhmm(), PW / 2, 128, 72, '#fff', 'center', 300);
+    tx(g, new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }), PW / 2, 180, 20);
     const apps = [['GPS', '#2fa84f', 'gps'], ['Kamera', '#555', 'camera'], ['Telefon', '#2fc14f', 'tel'], ['Galerie', '#f39c12', 'gal'],
       ['Garage', '#3b6fd8', 'garage'], ['Missionen', '#d8402b', 'mis'], ['Jobs', '#6d4c41', 'jobs'], ['Chat', '#00897b', 'chat'],
-      ['Immobilien', '#5e35b1', 'immo'], ['Tiere', '#ef6c00', 'tiere']];
+      ['Immobilien', '#5e35b1', 'immo'], ['Tiere', '#ef6c00', 'tiere'], ['Bank', '#1b5e20', 'bank'], ['Einstellung', '#607d8b', 'set']];
     if (isAdmin()) apps.push(['Admin', '#b3001b', 'admin']);             // nur für Gabriel
     apps.forEach(([n, c, id], i) => {
       const k = ease((at - i * .07) / .35); if (k <= 0) return;
-      const x = 14 + (i % 4) * 85, y = 252 + Math.floor(i / 4) * 118 + (1 - k) * 30;
-      g.globalAlpha = k; rr(g, x, y, 72, 72, 18, c); icon(g, id, x + 36, y + 36, .78); tx(g, n, x + 36, y + 88, n.length > 8 ? 12 : 14); g.globalAlpha = 1;
-      btn(x, y, 72, 100, 'app:' + id);
+      const x = 14 + (i % 4) * 85, y = 212 + Math.floor(i / 4) * 104 + (1 - k) * 30;
+      g.globalAlpha = k; rr(g, x, y, 72, 72, 18, c); icon(g, id, x + 36, y + 36, .78); tx(g, n, x + 36, y + 86, n.length > 8 ? 12 : 14); g.globalAlpha = 1;
+      btn(x, y, 72, 96, 'app:' + id);
     });
-    if (phone.missed) { rr(g, 20, 610, PW - 40, 44, 14, 'rgba(0,0,0,.45)'); tx(g, 'Verpasster Anruf: ' + phone.missed, PW / 2, 632, 16); }
+    if (phone.missed) { rr(g, 20, 630, PW - 40, 36, 12, 'rgba(0,0,0,.45)'); tx(g, 'Verpasster Anruf: ' + phone.missed, PW / 2, 648, 15); }
     const J = job.id ? JOBS.find(j => j.id === job.id).name : '';
     tx(g, (net.online ? `Online: ${net.players.size + 1}` : 'Offline') + `  ·  ${Math.round(money)} €  ·  ${Math.round(player.hp)} HP` + (save.fuel < 1 && vehicle.type !== 'scooter' ? `  ·  Tank ${Math.round(save.fuel * 100)} %` : ''), PW / 2, 676, 14, net.online ? '#9f9' : '#f99');
     if (J || wanted.stars) tx(g, (J ? 'Job: ' + J : '') + (J && wanted.stars ? '   ' : '') + (wanted.stars ? 'Fahndungsstufe ' + wanted.stars : ''), PW / 2, 700, 14, wanted.stars ? '#ffd21a' : '#cfd8dc');
@@ -1768,20 +1813,76 @@ function drawApp() {
     else { tx(g, 'Bello ist dein Hund', PW / 2, 390, 22, '#fff', 'center', 800); tx(g, 'Hand an seinen Kopf = streicheln', PW / 2, 420, 13, '#ffcc80'); rr(g, 60, 450, PW - 120, 56, 16, '#ef6c00'); tx(g, 'Bello rufen', PW / 2, 478, 19, '#fff', 'center', 800); btn(60, 450, PW - 120, 56, 'dog:call'); }
   } else if (a === 'admin') {
     // Admin Panel (nur Gabriel): Ereignisse für alle Spieler auslösen
-    rr(g, 0, 60, PW, 96, 0, '#5c0010'); tx(g, 'Admin Panel', 24, 96, 32, '#fff', 'left', 800); tx(g, 'Gilt für alle Spieler auf dem Server', 24, 130, 14, '#ffb3b3', 'left', 500);
-    const T = disaster.tornado, S = disaster.tsunami;
+    rr(g, 0, 56, PW, 96, 0, '#5c0010'); tx(g, 'Admin Panel', 24, 92, 32, '#fff', 'left', 800); tx(g, 'Gilt für alle Spieler auf dem Server', 24, 126, 14, '#ffb3b3', 'left', 500);
+    const T = disaster.tornado, S = disaster.tsunami, sure = time - bank.ask < 8;
     [['tornado', 'tornado', 'Tornado starten', T ? 'läuft gerade …' : 'zieht durch die Stadt', '#6b4e16'],
      ['tornado', 'tornado5', 'EF5-Tornado (stärkster)', 'saugt Spieler + Autos ein, wirft sie hoch', '#5c0010'],
      ['wave', 'tsunami', 'Tsunami starten', S ? 'läuft gerade …' : 'Riesenwelle + Überschwemmung', '#0d4f6b'],
      ['vil', 'vil', 'NPC-Angriff starten', vil.ped ? 'läuft gerade …' : 'ein NPC schießt auf andere', '#8e1b1b'],
      ['fire', 'fire', 'Gebäude anzünden', 'ein Haus in der Nähe brennt', '#b34700'],
      ['rain', 'rain', weather.target ? 'Regen ausschalten' : 'Regen einschalten', weather.target ? 'es regnet gerade' : 'es ist gerade trocken', '#2b5d9b'],
-     ['stop', 'stop', 'Alles stoppen', 'Tornado, Tsunami, Angriff beenden', '#444a55']].forEach(([ic, act, n, sub, c], i) => {
-      const y = 166 + i * 80;
-      rr(g, 14, y, PW - 28, 72, 16, c); g.beginPath(); g.arc(50, y + 36, 24, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, ic, 50, y + 36, .75);
-      tx(g, n, 88, y + 26, 18, '#fff', 'left', 800); tx(g, sub, 88, y + 50, 12, 'rgba(255,255,255,.75)', 'left', 500);
-      btn(14, y, PW - 28, 72, 'adm:' + act);
+     ['stop', 'stop', 'Alles stoppen', 'Tornado, Tsunami, Angriff beenden', '#444a55'],
+     ['money', 'money', 'Geld verschenken', 'beliebig viel an Spieler (oder dich)', '#1b5e20'],
+     ['power', 'shutdown', 'Server herunterfahren', 'Wartung: Spiel für alle schließen', '#263238']].forEach(([ic, act, n, sub, c], i) => {
+      const y = 160 + i * 62;
+      rr(g, 14, y, PW - 28, 56, 14, c); g.beginPath(); g.arc(44, y + 28, 20, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, ic, 44, y + 28, .6);
+      tx(g, n, 76, y + 20, 17, '#fff', 'left', 800); tx(g, sub, 76, y + 41, 12, 'rgba(255,255,255,.75)', 'left', 500);
+      btn(14, y, PW - 28, 56, 'adm:' + act);
     });
+    if (sure) {                                                            // Sicherheitsabfrage (Knopf an anderer Stelle, damit Doppeltippen nichts auslöst)
+      g.fillStyle = 'rgba(0,0,0,.72)'; g.fillRect(0, 0, PW, PH); btn(0, 0, PW, PH, 'adm:cancel');
+      rr(g, 20, 220, PW - 40, 250, 20, '#1e2129'); g.strokeStyle = '#d50000'; g.lineWidth = 3; g.beginPath(); g.roundRect(20, 220, PW - 40, 250, 20); g.stroke();
+      warnIcon(g, PW / 2, 262, 1.4);
+      tx(g, 'Server herunterfahren?', PW / 2, 312, 21, '#fff', 'center', 800);
+      tx(g, 'Alle Spieler: 5 s schwarz, dann', PW / 2, 342, 13, '#cfd8dc', 'center', 500); tx(g, '„Service wurde geschlossen für Reparierung“', PW / 2, 360, 13, '#cfd8dc', 'center', 500);
+      const ok = time - bank.ask > .8;
+      rr(g, 36, 392, 136, 56, 14, ok ? '#d50000' : '#5a1a1a'); tx(g, 'Ja, schließen', 104, 420, 15, '#fff', 'center', 800); btn(36, 392, 136, 56, 'adm:shutdown!');
+      rr(g, PW - 172, 392, 136, 56, 14, '#455a64'); tx(g, 'Abbrechen', PW - 104, 420, 15, '#fff', 'center', 800); btn(PW - 172, 392, 136, 56, 'adm:cancel');
+    }
+  } else if (a === 'admmoney') {
+    // Admin: Geld verschenken (Betrag wählen, dann Spieler antippen)
+    rr(g, 0, 56, PW, 80, 0, '#1b5e20'); tx(g, 'Geld verschenken', 24, 88, 28, '#fff', 'left', 800); tx(g, 'Admin · kommt sofort aufs Konto', 24, 118, 13, '#c8e6c9', 'left', 500);
+    ADM_STEPS.forEach((v, i) => { const x = 10 + i * 68, on = bank.admAmt === v; rr(g, x, 148, 64, 40, 12, on ? '#43a047' : '#263238'); tx(g, v >= 1e6 ? '1 Mio' : v.toLocaleString('de-DE'), x + 32, 168, v >= 1e5 ? 12 : 14, '#fff', 'center', 800); btn(x, 148, 64, 40, 'aamt:' + i); });
+    tx(g, 'Betrag: ' + bank.admAmt.toLocaleString('de-DE') + ' €', PW / 2, 210, 18, '#a5d6a7', 'center', 700);
+    [{ id: -1, name: 'Ich selbst' }, ...[...net.players.values()].slice(0, 6)].forEach((p, i) => {
+      const y = 232 + i * 64;
+      rr(g, 14, y, PW - 28, 56, 14, '#1e2129'); rr(g, 26, y + 10, 36, 36, 18, i ? '#e20074' : '#b3001b'); tx(g, p.name[0].toUpperCase(), 44, y + 28, 18);
+      tx(g, p.name.slice(0, 18), 74, y + 28, 17, '#fff', 'left', 600);
+      rr(g, PW - 110, y + 10, 84, 36, 12, '#2e7d32'); tx(g, 'Geben', PW - 68, y + 28, 15, '#fff', 'center', 800); btn(14, y, PW - 28, 56, 'gift:' + p.id);
+    });
+    if (!net.players.size) tx(g, 'Sonst ist gerade niemand online', PW / 2, 318, 14, '#90a4ae');
+    rr(g, 14, PH - 104, PW - 28, 46, 14, '#37474f'); tx(g, '← Admin Panel', PW / 2, PH - 81, 17, '#fff', 'center', 700); btn(14, PH - 104, PW - 28, 46, 'app:admin');
+  } else if (a === 'bank') {
+    // Bank: Kontostand, Geld an andere Spieler überweisen, letzte Buchungen
+    const gr2 = g.createLinearGradient(0, 56, 0, 200); gr2.addColorStop(0, '#2e7d32'); gr2.addColorStop(1, '#1b5e20'); rr(g, 12, 60, PW - 24, 120, 18, gr2);
+    tx(g, 'Stuttgart Bank', 30, 86, 16, '#c8e6c9', 'left', 700); tx(g, Math.round(money).toLocaleString('de-DE') + ' €', 30, 128, 38, '#fff', 'left', 800); tx(g, 'Girokonto', 30, 160, 13, '#a5d6a7', 'left', 500);
+    tx(g, 'Überweisen – Betrag', 20, 202, 15, '#fff', 'left', 700);
+    BANK_STEPS.forEach((v, i) => { const x = 10 + i * 57, on = bank.amt === v; rr(g, x, 216, 53, 38, 11, on ? '#43a047' : '#263238'); tx(g, v.toLocaleString('de-DE'), x + 26.5, 235, 14, '#fff', 'center', 800); btn(x, 216, 53, 38, 'bamt:' + i); });
+    const pl = [...net.players.values()].slice(0, 4);
+    if (!pl.length) { rr(g, 14, 266, PW - 28, 56, 14, '#1e2129'); tx(g, 'Niemand online zum Überweisen', PW / 2, 294, 15, '#90a4ae'); }
+    pl.forEach((p, i) => {
+      const y = 266 + i * 60, ok = money >= bank.amt;
+      rr(g, 14, y, PW - 28, 54, 14, '#1e2129'); rr(g, 26, y + 9, 36, 36, 18, '#e20074'); tx(g, p.name[0].toUpperCase(), 44, y + 27, 18);
+      tx(g, p.name.slice(0, 14), 74, y + 27, 17, '#fff', 'left', 600);
+      rr(g, PW - 130, y + 9, 104, 36, 12, ok ? '#2e7d32' : '#555'); tx(g, 'Überweisen', PW - 78, y + 27, 14, '#fff', 'center', 800); btn(14, y, PW - 28, 54, 'pay:' + p.id);
+    });
+    const y0 = 266 + Math.max(1, pl.length) * 60 + 14;
+    tx(g, 'Letzte Buchungen', 20, y0, 15, '#fff', 'left', 700);
+    const L = (save.tx || []).slice(-Math.floor((PH - 70 - y0) / 30)).reverse();
+    if (!L.length) tx(g, 'Noch keine Buchungen', 20, y0 + 30, 13, '#78909c', 'left', 500);
+    L.forEach((t, i) => { const y = y0 + 28 + i * 30; tx(g, t.text.slice(0, 26), 20, y, 14, '#cfd8dc', 'left', 500); tx(g, (t.d > 0 ? '+' : '−') + Math.abs(t.d).toLocaleString('de-DE') + ' €', PW - 20, y, 14, t.d > 0 ? '#69f0ae' : '#ff8a80', 'right', 700); });
+  } else if (a === 'set') {
+    // Einstellungen: Klingelton wählen (Antippen = Vorschau)
+    tx(g, 'Einstellungen', 24, 96, 30, '#fff', 'left', 700); tx(g, 'Klingelton', 24, 136, 16, '#b0bec5', 'left', 700);
+    const cur = ring.cur(), n = Math.min(RINGS.length, 11);
+    RINGS.slice(0, n).forEach((r, i) => {
+      const y = 152 + i * 50, on = r === cur;
+      rr(g, 14, y, PW - 28, 44, 12, on ? '#37474f' : '#1e2129');
+      g.beginPath(); g.arc(38, y + 22, 9, 0, 7); g.strokeStyle = on ? '#4fc3f7' : '#607d8b'; g.lineWidth = 3; g.stroke(); if (on) { g.beginPath(); g.arc(38, y + 22, 4.5, 0, 7); g.fillStyle = '#4fc3f7'; g.fill(); }
+      tx(g, r.name.slice(0, 22), 58, y + 22, 16, '#fff', 'left', on ? 700 : 500); if (!r.synth) tx(g, r.file.includes('klingeltoene/') ? 'eigene Datei' : 'Original', PW - 28, y + 22, 11, '#78909c', 'right', 500);
+      btn(14, y, PW - 28, 44, 'ring:' + i);
+    });
+    tx(g, 'Eigene Töne: mp3 in assets/klingeltoene/', PW / 2, 152 + n * 50 + 14, 12, '#78909c', 'center', 500);
   } else if (a === 'mis') {
     tx(g, 'Missionen', 24, 100, 34, '#fff', 'left', 700); tx(g, 'Konto: ' + money + ' €', 24, 132, 16, '#9f9', 'left');
     // Live-Mission: NPC-Angreifer (rot)
@@ -1967,6 +2068,11 @@ function phoneAction(a) {
   if (a.startsWith('mis:')) { startMission(a.slice(4)); return openApp('home'); }
   if (a === 'misstop') { mission = null; msg('Mission abgebrochen', 2); return; }
   if (a.startsWith('adm:')) { adminAction(a.slice(4)); return; }
+  if (a.startsWith('aamt:')) { bank.admAmt = ADM_STEPS[+a.slice(5)]; return; }
+  if (a.startsWith('gift:')) { adminGive(+a.slice(5)); return; }
+  if (a.startsWith('bamt:')) { bank.amt = BANK_STEPS[+a.slice(5)]; return; }
+  if (a.startsWith('pay:')) { transfer(+a.slice(4)); return; }
+  if (a.startsWith('ring:')) { const r = RINGS[+a.slice(5)]; if (r) { ring.preview(r); writeSave(); } return; }
   if (a.startsWith('job:')) { startJob(a.slice(4)); return; }
   if (a === 'jobstop') { endJob(); phone.drawT = 0; return; }
   if (a.startsWith('chatto:')) { chat.to = +a.slice(7); return; }
@@ -2315,6 +2421,9 @@ SND.welcome = mkBuf(3.2, t => {                           // eigener Willkommens
   let s = 0; [[0, 587], [.22, 784], [.44, 988], [.7, 1175], [.7, 784]].forEach(([t0, f]) => { if (t >= t0) { const u = t - t0; s += (Math.sin(2 * Math.PI * f * u) + .35 * Math.sin(2 * Math.PI * f * 2 * u) + .12 * Math.sin(2 * Math.PI * f * 3 * u)) * Math.exp(-u * 2.2) * Math.min(1, u * 60); } });
   return s * .16 + Math.sin(2 * Math.PI * 294 * t) * Math.exp(-t * 1.1) * Math.min(1, t * 8) * .08;
 });
+// Motor heult auf (nach dem Tuning) und Turbo-"Pssscht" (Blow-Off beim Gas wegnehmen)
+SND.rev = (() => { let ph = 0, l = 0; const sr = AC.sampleRate; return mkBuf(1.6, (t, r) => { const f = 42 + 120 * Math.sin(Math.PI * Math.min(1, t / 1.3)) ** 1.5; ph += f / sr; const saw = (ph % 1) * 2 - 1, sq = (ph * .5) % 1 < .5 ? 1 : -1; l += (saw * .6 + sq * .4 + r * .15 - l) * (.08 + f / 900); return l * .7 * Math.min(1, t * 20) * Math.min(1, (1.6 - t) * 4); }); })();
+SND.blow = (() => { let l = 0; return mkBuf(.5, (t, r) => { l += (r - l) * .35; return (r - l) * .5 * Math.min(1, t * 60) * Math.exp(-t * 7); }); })();
 SND.warn = mkBuf(1.6, t => { const k = Math.floor(t / .4); return t % .4 < .3 ? Math.sin(2 * Math.PI * (k % 2 ? 660 : 880) * t) * .35 * Math.min(1, (.3 - t % .4) * 30) : 0; });
 SND.beep = mkBuf(.5, t => (t < .14 || (t > .24 && t < .38)) ? Math.sign(Math.sin(2 * Math.PI * 2900 * t)) * .22 : 0);
 function cpOn() {
@@ -2549,17 +2658,24 @@ function drawCarView(g, W) {
   }
   if (!showCall && W.app === 'tune') {                                  // Tuning-Werkstatt
     tx(g, 'Tuning-Werkstatt', X0 + 20, 32, 24, '#ffc400', 'left', 800);
-    tx(g, W.onPad ? 'Antippen = kaufen (sofort am Auto)' : 'Stell das Auto auf die gelbe Fläche der Werkstatt', X0 + 20, 58, 13, W.onPad ? '#ddd' : '#ff8a80', 'left', 600);
+    tx(g, W.onPad ? 'Antippen = kaufen (sofort am Auto)' : 'Stell das Auto auf die gelbe Fläche der Werkstatt', X0 + 20, 54, 13, W.onPad ? '#ddd' : '#ff8a80', 'left', 600);
     const row = (y, label, list, kind, cur) => {
-      tx(g, label + '  ·  ' + TUNE_PRICE[kind] + ' €', X0 + 20, y, 16, '#fff', 'left', 700);
+      tx(g, label + '  ·  ' + TUNE_PRICE[kind] + ' €', X0 + 20, y, 15, '#fff', 'left', 700);
       list.forEach((c, i) => {
         const x = X0 + 48 + i * 72, on = (cur ?? 0) === c;
-        g.beginPath(); g.arc(x, y + 42, 25, 0, 7); g.fillStyle = c ? '#' + c.toString(16).padStart(6, '0') : '#222'; g.fill();
-        g.lineWidth = on ? 5 : 2; g.strokeStyle = on ? '#ffc400' : '#555'; g.stroke(); if (!c) tx(g, 'Aus', x, y + 42, 12, '#bbb', 'center', 700);
-        cbtn(x - 32, y + 10, 64, 64, 'tn:' + kind + ':' + i);
+        g.beginPath(); g.arc(x, y + 36, 22, 0, 7); g.fillStyle = c ? '#' + c.toString(16).padStart(6, '0') : '#222'; g.fill();
+        g.lineWidth = on ? 5 : 2; g.strokeStyle = on ? '#ffc400' : '#555'; g.stroke(); if (!c) tx(g, 'Aus', x, y + 36, 12, '#bbb', 'center', 700);
+        cbtn(x - 32, y + 8, 64, 58, 'tn:' + kind + ':' + i);
       });
     };
-    row(92, 'Lack', PAINTS, 'p', W.tune.p); row(192, 'Felgen', RIMS, 'r', W.tune.r); row(292, 'Neon unterm Auto', NEONS, 'n', W.tune.n || 0);
+    row(76, 'Lack', PAINTS, 'p', W.tune.p); row(152, 'Felgen', RIMS, 'r', W.tune.r); row(228, 'Neon unterm Auto', NEONS, 'n', W.tune.n || 0);
+    tx(g, 'Motor  ·  schneller, mehr Sound', X0 + 20, 304, 15, '#fff', 'left', 700);
+    ENGINES.forEach((e, i) => {
+      const x = X0 + 16 + i * 150, on = (W.tune.m || 0) === i;
+      rr(g, x, 318, 140, 50, 12, on ? '#ffc400' : '#263238');
+      tx(g, e.name, x + 70, 335, 16, on ? '#111' : '#fff', 'center', 800); tx(g, (e.price ? e.price.toLocaleString('de-DE') + ' €' : 'Original') + ' · ' + Math.round(e.v * 3.6) + ' km/h', x + 70, 355, 11, on ? '#222' : '#aaa', 'center', 600);
+      cbtn(x, 318, 140, 50, 'tn:m:' + i);
+    });
   }
   // Zapfsäule / Werkstatt: Knopf unten
   if (W.local && !showCall && (W.canFuel || W.filling)) {
@@ -2670,11 +2786,11 @@ function drawClusterMain(g, W = localCarView()) {
   g.strokeStyle = 'rgba(255,255,255,.12)'; g.lineWidth = 2; g.strokeRect(170, 6, 350, KH - 12);
   if (W.nav.on && W.nav.info) { rr(g, 178, 12, 190, 40, 10, 'rgba(10,60,30,.92)'); navArrow(g, W.nav.info.dir, 198, 32, .5); tx(g, fmtShort(W.nav.info.d), 220, 32, 17, '#fff', 'left', 700); }
   // rechts: Tacho
-  const kmh = sp * 3.6, cx = 644, cy = 134, R0 = 92, a0 = Math.PI * .75, a1 = Math.PI * 2.25, va = a0 + (a1 - a0) * clamp(kmh / 240, 0, 1);
+  const kmh = sp * 3.6, cx = 644, cy = 134, R0 = 92, a0 = Math.PI * .75, a1 = Math.PI * 2.25, va = a0 + (a1 - a0) * clamp(kmh / 320, 0, 1);
   g.lineCap = 'round'; g.lineWidth = 10; g.strokeStyle = '#1d2230'; g.beginPath(); g.arc(cx, cy, R0, a0, a1); g.stroke();
   const ag = g.createLinearGradient(cx - R0, 0, cx + R0, 0); ag.addColorStop(0, '#2b9bff'); ag.addColorStop(.6, '#7a5cff'); ag.addColorStop(1, '#ff3b5c');
   g.strokeStyle = ag; g.beginPath(); g.arc(cx, cy, R0, a0, va); g.stroke();
-  for (let v = 0; v <= 240; v += 20) { const a = a0 + (a1 - a0) * v / 240, big = v % 40 === 0; g.lineWidth = big ? 3 : 1.5; g.strokeStyle = '#8b93a6'; g.beginPath(); g.moveTo(cx + Math.cos(a) * (R0 - 16), cy + Math.sin(a) * (R0 - 16)); g.lineTo(cx + Math.cos(a) * (R0 - (big ? 26 : 21)), cy + Math.sin(a) * (R0 - (big ? 26 : 21))); g.stroke(); if (big) tx(g, String(v), cx + Math.cos(a) * (R0 - 40), cy + Math.sin(a) * (R0 - 40), 11, '#8b93a6', 'center', 600); }
+  for (let v = 0; v <= 320; v += 20) { const a = a0 + (a1 - a0) * v / 320, big = v % 40 === 0; g.lineWidth = big ? 3 : 1.5; g.strokeStyle = '#8b93a6'; g.beginPath(); g.moveTo(cx + Math.cos(a) * (R0 - 16), cy + Math.sin(a) * (R0 - 16)); g.lineTo(cx + Math.cos(a) * (R0 - (big ? 26 : 21)), cy + Math.sin(a) * (R0 - (big ? 26 : 21))); g.stroke(); if (big) tx(g, String(v), cx + Math.cos(a) * (R0 - 40), cy + Math.sin(a) * (R0 - 40), 11, '#8b93a6', 'center', 600); }
   g.strokeStyle = '#ff4d4d'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(va) * (R0 - 12), cy + Math.sin(va) * (R0 - 12)); g.stroke();
   tx(g, String(Math.round(kmh)), cx, cy + 18, 38, '#fff', 'center', 800); tx(g, 'km/h', cx, cy + 46, 12, '#9aa3b2', 'center', 600);
   tx(g, 'D', cx, cy - 30, 16, '#7fdc8f', 'center', 800);
@@ -2918,7 +3034,7 @@ function updPlayerCar(dt) {
     if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Totalschaden! Handy → Garage → Reparieren/holen', 3); } thr = 0;
     if (Math.random() < dt * 6) { const f = g.localToWorld(V(0, 1, 1.6)); smoke.spawn(f.x, f.y, f.z, rand(-.4, .4), rand(1.5, 3), rand(-.4, .4), rand(3, 5)); }
   }
-  const maxV = sc ? 7 : 62, acc = sc ? 3.2 : 7.5;
+  const est = engStage(), maxV = sc ? 7 : ENGINES[est].v, acc = sc ? 3.2 : ENGINES[est].a;   // Motor-Tuning
   if (thr > .05) c.speed += (c.speed < 0 ? 14 : acc) * thr * dt;
   if (brk > .05) c.speed -= (c.speed > .5 ? (sc ? 6 : 14) : 4) * brk * dt;
   if (thr <= .05 && brk <= .05 && !inAir) c.speed -= Math.sign(c.speed) * Math.min(Math.abs(c.speed), (sc ? .8 : 1.2) * dt);
@@ -3014,7 +3130,15 @@ function updPlayerCar(dt) {
   if (engine) {
     const s = Math.abs(c.speed);
     if (sc) { engine.o1.frequency.value = 180 + s * 40; engine.o2.frequency.value = 90 + s * 20; engine.pa.setVolume(player.inCar && s > .3 ? .12 : 0); }
-    else { engine.o1.frequency.value = 38 + s * 3.2 + thr * 12; engine.o2.frequency.value = 19 + s * 1.6; engine.pa.setVolume(player.inCar && !c.dead ? .5 : 0); }
+    else {
+      const k = 1 - est * .07;                                             // getunt: tiefer, offener, lauter
+      engine.o1.frequency.value = (38 + s * 3.2 + thr * 12) * k; engine.o2.frequency.value = (19 + s * 1.6) * k;
+      engine.f.frequency.value = 380 + est * 80 + thr * est * 110; engine.pa.setVolume(player.inCar && !c.dead ? .5 + est * .1 : 0);
+      if (est === 3 && !engine.tb) { const o = AC.createOscillator(), tg = AC.createGain(); o.type = 'sine'; tg.gain.value = 0; o.connect(tg); tg.connect(engine.g); o.start(); engine.tb = { o, tg }; }
+      if (engine.tb) { engine.tb.o.frequency.value = 1500 + s * 22; engine.tb.tg.gain.value = est === 3 ? thr * Math.min(1, s / 14) * .045 : 0; }   // Turbo-Pfeifen
+      if (est >= 2 && (c.thrPrev || 0) > .6 && thr < .1 && s > 10) playAt(SND.blow, g.position, .5 + est * .1, 5);   // "Pssscht" beim Gas wegnehmen
+      c.thrPrev = thr;
+    }
   }
 }
 // p = Aufprallpunkt (Welt) oder null (Landung)
@@ -3612,6 +3736,7 @@ function release(h) {
 const phoneRay = new THREE.Raycaster();
 function vrInput(dt) {
   const L = handBy('left'), Rh = handBy('right');
+  if (maint.on) { if (Rh?.down[4] && isAdmin() && maint.panel) { probeServer(true); msg('Server wird geöffnet …', 2); } return; }   // Wartung: nichts geht, nur der Admin kann wieder öffnen
   for (const h of hands) { if (h.down[1]) tryGrab(h); if (h.up[1]) release(h); }
   laser.visible = false;
   // Zeigestrahl aufs Handy oder aufs Auto-Display (CarPlay); Abzug = antippen
@@ -3698,6 +3823,7 @@ renderer.xr.addEventListener('sessionstart', () => {
   Object.assign(sunLight.shadow.camera, { left: -40, right: 40, top: 40, bottom: -40 }); sunLight.shadow.camera.updateProjectionMatrix();
   startEl.style.display = 'none'; startOnline(); startIntro(); AC.resume(); camera.rotation.set(0, 0, 0); TOOLS.forEach(t => { if (!t.heldBy) holster(t); }); if (phone.where === 'hand') setPhone('hand'); msg('Willkommen in Stuttgart! A = Handy · Grip = greifen', 5); });
 addEventListener('keydown', e => {
+  if (maint.on) { if (e.code === 'Space' && isAdmin() && maint.panel) probeServer(true); return; }   // Wartung
   // Chat am PC: tippen, solange die Chat-App offen ist
   if (!xrOn() && phone.where === 'hand' && phone.app === 'chat' && !e.ctrlKey && !e.altKey) {
     if (e.key === 'Enter') { sendChat(chat.draft); e.preventDefault(); return; }
@@ -4438,7 +4564,74 @@ function adminAction(k) {
   }
   else if (k === 'rain') { const v = weather.target ? 0 : 1; weather.target = v; weather.t = 900; share('w', { v, t: 900 }); msg(v ? 'Regen an' : 'Regen aus', 2); }
   else if (k === 'stop') { stopDisasters(); share('dstop', {}); if (vil.i >= 0) { setVillain(-1); share('vil', { i: -1 }); } msg('Alles gestoppt', 2); }
+  else if (k === 'money') openApp('admmoney');
+  else if (k === 'shutdown') { bank.ask = time; }                       // erst fragen …
+  else if (k === 'cancel') { bank.ask = -99; }
+  else if (k === 'shutdown!') { if (time - bank.ask > .8 && time - bank.ask < 8) { bank.ask = -99; serverShutdown(); } }   // … dann wirklich
   phone.drawT = 0;
+}
+
+// ===================================================================
+// Geld: überweisen (App "Bank"), Admin verschenkt Geld · Wartung: Admin fährt den Server herunter
+// ===================================================================
+const bank = { amt: 100, admAmt: 1000, ask: -99 };
+const BANK_STEPS = [10, 50, 100, 500, 1000, 5000], ADM_STEPS = [100, 1000, 10000, 100000, 1000000];
+function addTx(text, d) { (save.tx ||= []).push({ text, d, ts: Date.now() }); if (save.tx.length > 20) save.tx.shift(); phone.drawT = 0; }
+function transfer(id) {
+  const p = net.players.get(id); if (!p) return msg('Der Spieler ist nicht online', 2);
+  const a = Math.round(bank.amt); if (a <= 0) return; if (money < a) return msg('Zu wenig Geld auf dem Konto', 2);
+  money -= a; netSig(id, { pay: a }); addTx('An ' + p.name, -a); writeSave(); uiTone(SND.ding); msg(a.toLocaleString('de-DE') + ' € an ' + p.name + ' überwiesen', 3);
+}
+function adminGive(id) {
+  if (!isAdmin()) return; const a = bank.admAmt;
+  if (id === -1) { money += a; addTx('Admin-Geld', a); writeSave(); msg('+' + a.toLocaleString('de-DE') + ' € (Admin)', 2); return; }
+  const p = net.players.get(id); if (!p) return; netSig(id, { gift: a }); msg(p.name + ' bekommt ' + a.toLocaleString('de-DE') + ' € (Admin)', 2.5);
+}
+function onMoney(p, m) {
+  if (m.pay > 0) { money += m.pay; addTx('Von ' + p.name, m.pay); writeSave(); uiTone(SND.arrive); msg(p.name + ' hat dir ' + m.pay.toLocaleString('de-DE') + ' € überwiesen', 4); }
+  if (m.gift > 0) { money += m.gift; addTx('Geschenk vom Admin', m.gift); writeSave(); uiTone(SND.arrive); msg('Der Admin hat dir ' + m.gift.toLocaleString('de-DE') + ' € geschenkt!', 4); }
+}
+// ---------- Server herunterfahren: bei allen 5 s schwarz, dann "Service wurde geschlossen für Reparierung" ----------
+const maint = { on: false, t: 0, panel: null, probeT: 0 };
+const wsURL = () => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
+function serverShutdown() {
+  if (!isAdmin()) return;
+  if (net.online) netSend({ t: 'shutdown' }); else onShutdown();
+}
+function onShutdown() {
+  if (maint.on) return; maint.on = true; maint.t = 0;
+  intro = { t: 99 }; fadeFx.visible = true; fadeFx.material.opacity = 1;   // alles schwarz
+  try { listener.setMasterVolume(0); } catch (e) { }
+  ring.pause(); radio.on = false; if (phone.call) endCall();
+  net.online = false; try { net.ws?.close(); } catch (e) { }
+}
+function maintPanel() {
+  const [c, g] = C(1024, 512);
+  rr(g, 0, 0, 1024, 512, 48, '#14171d'); g.strokeStyle = '#c62828'; g.lineWidth = 10; g.beginPath(); g.roundRect(5, 5, 1014, 502, 44); g.stroke();
+  warnIcon(g, 512, 120, 3.2);
+  tx(g, 'Service wurde geschlossen', 512, 250, 64, '#fff', 'center', 800); tx(g, 'für Reparierung', 512, 320, 56, '#fff', 'center', 700);
+  tx(g, 'Wir sind bald wieder da – das Spiel lädt dann von selbst neu.', 512, 400, 30, '#aab', 'center', 500);
+  if (isAdmin()) tx(g, 'Admin: ' + (xrOn() ? 'A' : 'Leertaste') + ' = Server wieder öffnen', 512, 456, 30, '#ffd21a', 'center', 700);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(.9, .45), new THREE.MeshBasicMaterial({ map: T(c, false), transparent: true, depthTest: false, toneMapped: false }));
+  m.position.set(0, 0, -.75); m.renderOrder = 1001; m.layers.set(OVERLAY); return m;
+}
+// prüft regelmäßig, ob der Server wieder offen ist (dann neu laden); reopen = Admin öffnet ihn wieder
+function probeServer(reopen) {
+  let ws; try { ws = new WebSocket(wsURL()); } catch (e) { return; }
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'hello', name: net.name }));
+  ws.onmessage = e => {
+    let m; try { m = JSON.parse(e.data); } catch (er) { return; }
+    if (m.t === 'welcome') { if (m.maint && reopen) ws.send(JSON.stringify({ t: 'reopen' })); else if (!m.maint) { ws.close(); location.reload(); } }
+    if (m.t === 'reopened') { ws.close(); location.reload(); }
+    if (m.t === 'shutdown') ws.close();
+  };
+  setTimeout(() => { try { ws.close(); } catch (e) { } }, 8000);
+}
+function updMaint(dt) {
+  if (!maint.on) return; maint.t += dt;
+  fadeFx.visible = true; fadeFx.material.opacity = 1;
+  if (maint.t > 5 && !maint.panel) { maint.panel = maintPanel(); camera.add(maint.panel); try { listener.setMasterVolume(1); } catch (e) { } uiTone(SND.warn); }
+  maint.probeT -= dt; if (maint.t > 8 && maint.probeT <= 0) { maint.probeT = 10; probeServer(false); }
 }
 
 // ===================================================================
@@ -4904,6 +5097,9 @@ const PAINTS = [0xc0392b, 0x1f3a93, 0x111111, 0xf2f2f2, 0x2e7d32, 0xffb300, 0x8e
 const RIMS = [0xc7ccd1, 0x151515, 0xd4af37, 0xc62828];
 const NEONS = [0, 0x00e5ff, 0xff1744, 0x76ff03, 0xd500f9];
 const TUNE_PRICE = { p: 500, r: 300, n: 800 };
+// Motor-Tuning: höhere Stufe = schneller, mehr Beschleunigung, tieferer/lauterer Sound (Turbo pfeift)
+const ENGINES = [{ name: 'Serie', v: 62, a: 7.5, price: 0 }, { name: 'Stufe 1', v: 70, a: 9, price: 1500 }, { name: 'Stufe 2', v: 78, a: 10.5, price: 3500 }, { name: 'Turbo', v: 88, a: 12.5, price: 7000 }];
+const engStage = () => vehicle.type === 'scooter' ? 0 : save.tune[vehicle.id]?.m || 0;
 const onPad = () => player.inCar && vehicle.type !== 'scooter' && Math.hypot(pcar.group.position.x - tuningPad.x, pcar.group.position.z - tuningPad.z) < 5 && Math.abs(pcar.speed) < 1;
 const neonTex = (() => { const [c, g] = C(128, 128), gr = g.createRadialGradient(64, 64, 8, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.6, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); return T(c, false); })();
 function rimMatsOf(root) {
@@ -4931,10 +5127,16 @@ function applyTune(c, t) {
   c.neon.visible = !!t?.n; if (t?.n) c.neon.material.color.setHex(t.n);
 }
 function buyTune(kind, i) {
-  const list = kind === 'p' ? PAINTS : kind === 'r' ? RIMS : NEONS, price = TUNE_PRICE[kind];
   if (!onPad()) return msg('Stell dein Auto auf die Fläche der Tuning-Werkstatt', 2.5);
-  if (money < price) return msg('Zu wenig Geld (' + price + ' €)', 2);
   const t = save.tune[vehicle.id] || (save.tune[vehicle.id] = {});
+  if (kind === 'm') {                                                      // Motor
+    const e = ENGINES[i]; if (!e || (t.m || 0) === i) return;
+    if (money < e.price) return msg('Zu wenig Geld (' + e.price.toLocaleString('de-DE') + ' €)', 2);
+    money -= e.price; if (i) t.m = i; else delete t.m;
+    playAt(SND.rev, pcar.group.position, .9, 6); msg(i ? 'Motor: ' + e.name + ' eingebaut (bis ' + Math.round(e.v * 3.6) + ' km/h)' : 'Serienmotor eingebaut', 3); writeSave(); return;
+  }
+  const list = kind === 'p' ? PAINTS : kind === 'r' ? RIMS : NEONS, price = TUNE_PRICE[kind];
+  if (money < price) return msg('Zu wenig Geld (' + price + ' €)', 2);
   money -= price; t[kind] = list[i]; if (kind === 'n' && !list[i]) delete t.n;
   applyTune(pcar, t); playAt(SND.whoosh, pcar.group.position, .5, 4); msg('Werkstatt: erledigt (−' + price + ' €)', 2); writeSave();
 }
@@ -5142,6 +5344,7 @@ function netConnect() {
     const was = net.online; net.online = false;
     if (phone.call) endCall();
     for (const p of net.players.values()) removePlayer(p); net.players.clear();
+    if (maint.on) return;                                                    // Wartung: nicht neu verbinden (probeServer prüft)
     if (was) msg('Verbindung zum Server verloren', 3);
     setTimeout(netConnect, 3000);
   };
@@ -5149,6 +5352,7 @@ function netConnect() {
 function onNet(m) {
   if (m.t === 'welcome') {
     net.id = m.id;
+    if (m.maint) { onShutdown(); return; }                                // Server ist gerade in Wartung
     // Auto steht noch unberührt am Start -> auf den eigenen Parkplatz stellen
     const gp = pcar.group.position;
     if (!player.inCar && Math.hypot(gp.x - SPAWN.car[0], gp.z - SPAWN.car[1]) < 1) { const [x, z] = spawnCarPos(); gp.set(x, groundAt(x, z), z); }
@@ -5173,6 +5377,7 @@ function onNet(m) {
     }
     phone.drawT = 0; return;
   }
+  if (m.t === 'shutdown') { onShutdown(); return; }                     // Admin hat den Server heruntergefahren
   if (m.t === 'sig' && m.snap) { applySnap(m.snap); return; }
   if (m.t === 'ev') { applyEv(m); return; }
   if (m.t === 'npc') { if (!amHost() && m.from === hostId()) applyNpc(m); return; }
@@ -5188,6 +5393,7 @@ function onNet(m) {
     if (m.hit) onHit(m.hit, p);
     if (m.arrest && wanted.stars) { const fine = busted(p.name + ' (Polizei)'); netSig(p.id, { reward: Math.max(200, fine) }); }   // von einem Polizisten festgenommen
     if (m.reward) { money += m.reward; save.st.arrest++; msg('Festnahme erfolgreich! +' + m.reward + ' €', 4); uiTone(SND.arrive); }
+    if (m.pay || m.gift) onMoney(p, m);                                  // Überweisung / Admin-Geschenk
     if (m.killed) { msg('Du hast ' + p.name + ' erledigt!', 3); money += 100; }
   }
 }
@@ -5379,7 +5585,7 @@ function myState() {
   if (wanted.stars) st.ws = wanted.stars;                                // Fahndungssterne (Polizisten sehen dich)
   if (wanted.cops.length) st.cops = wanted.cops.map(c => [r2(c.g.position.x), r2(c.g.position.z), r2(c.yaw)]);
   if (player.inCar && vehicle.type !== 'scooter') st.fu = r2(save.fuel);
-  const tn = save.tune[vehicle.id]; if (tn && vehicle.type !== 'scooter') st.tn = [tn.p || 0, tn.r || 0, tn.n || 0];
+  const tn = save.tune[vehicle.id]; if (tn && vehicle.type !== 'scooter') st.tn = [tn.p || 0, tn.r || 0, tn.n || 0, tn.m || 0];
   if (save.house >= 0) st.home = save.house;
   if (save.dog && dog.g) st.dg = [r2(dog.pos.x), r2(dog.pos.y), r2(dog.pos.z), r2(dog.yaw), dog.inCar ? 1 : 0];
   if (job.siren) st.sir = 1;
@@ -6394,7 +6600,7 @@ function frame() {
     hurt = Math.max(0, hurt - dt * 1.5); deathFx.material.opacity = hurt * .45 + (player.hp < 35 ? .12 + Math.sin(time * 6) * .06 : 0);
   }
   updWeather(dt); updMission(dt); updVillain(dt); updIntro(dt); updDisasters(dt);
-  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio();
+  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio(); updMaint(dt);
   saveT -= dt; if (saveT <= 0) { saveT = 5; writeSave(); }
   hud.visible = time < hudUntil;
   boomLight.intensity *= Math.pow(.02, dt); muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 120);
@@ -6407,4 +6613,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, get money() { return money; }, set money(v) { money = v; } };

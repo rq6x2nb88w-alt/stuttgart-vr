@@ -10,8 +10,8 @@ const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 function handler(req, res) {
   const url = decodeURIComponent(req.url.split('?')[0]);
   // Liste eigener Modelle (assets/models/*.glb), damit das Spiel nicht blind nachfragen muss
-  if (/^\/assets\/models\/([\w-]+\/)?$/.test(url)) {
-    let files = []; try { files = fs.readdirSync(path.join(ROOT, url)).filter(f => /\.(glb|gltf)$/i.test(f)); } catch (e) { }
+  if (/^\/assets\/(models\/([\w-]+\/)?|klingeltoene\/)$/.test(url)) {
+    let files = []; try { files = fs.readdirSync(path.join(ROOT, url)).filter(f => /\.(glb|gltf|mp3|ogg|wav|m4a)$/i.test(f)); } catch (e) { }
     res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-cache' }); return res.end(JSON.stringify(files));
   }
   const file = path.normalize(path.join(ROOT, url === '/' ? 'index.html' : url));
@@ -63,6 +63,8 @@ const plain = http.createServer(handler); plain.on('upgrade', wsAccept);
 start(plain, +process.env.PORT || 8080, 10, p => console.log(`PC:    http://localhost:${p}`));
 // ===== Multiplayer: kleiner WebSocket-Server (ohne Zusatzpakete) =====
 const clients = new Map(); let nextId = 1;
+let maint = false;                                                     // Wartung: Admin hat den Server heruntergefahren
+const isAdmin = c => /^gabriel$/i.test(c.name);
 function wsSend(c, str) {
   const p = Buffer.from(str), n = p.length;
   const h = n < 126 ? Buffer.from([0x81, n]) : n < 65536 ? Buffer.from([0x81, 126, n >> 8, n & 255]) : (() => { const b = Buffer.alloc(10); b[0] = 0x81; b[1] = 127; b.writeBigUInt64BE(BigInt(n), 2); return b; })();
@@ -97,9 +99,17 @@ function wsAccept(req, sock) {
       if (msg.t === 'hello') {
         c.name = String(msg.name || 'Spieler').replace(/[^\w äöüÄÖÜß.-]/g, '').slice(0, 16) || 'Spieler';
         console.log(`Spieler da: ${c.name} (${sock.remoteAddress})`);
+        if (maint) { wsSend(c, JSON.stringify({ t: 'welcome', id: c.id, maint: true })); continue; }
         wsSend(c, JSON.stringify({ t: 'welcome', id: c.id })); broadcast(list());
-      } else if (['s', 'ev', 'npc', 'scr'].includes(msg.t)) { msg.from = c.id; broadcast(JSON.stringify(msg), c); }
-      else if (msg.t === 'sig') { const to = clients.get(msg.to); if (to) { msg.from = c.id; wsSend(to, JSON.stringify(msg)); } }
+      } else if (msg.t === 'shutdown' && isAdmin(c)) {                 // Admin: Server herunterfahren -> alle sehen "Service geschlossen"
+        maint = true; console.log(`Server heruntergefahren von ${c.name}`);
+        for (const o of clients.values()) wsSend(o, JSON.stringify({ t: 'shutdown' }));
+      } else if (msg.t === 'reopen' && isAdmin(c)) {                   // Admin: wieder öffnen -> alle laden neu
+        maint = false; console.log(`Server wieder geöffnet von ${c.name}`);
+        for (const o of clients.values()) wsSend(o, JSON.stringify({ t: 'reopened' }));
+      } else if (maint) continue;
+      else if (['s', 'ev', 'npc', 'scr'].includes(msg.t)) { msg.from = c.id; broadcast(JSON.stringify(msg), c); }
+      else if (msg.t === 'sig') { if (msg.gift && !isAdmin(c)) continue; const to = clients.get(msg.to); if (to) { msg.from = c.id; wsSend(to, JSON.stringify(msg)); } }
     }
   });
   sock.on('close', bye); sock.on('error', bye);
