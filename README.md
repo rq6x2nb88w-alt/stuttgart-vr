@@ -26,6 +26,9 @@ node server.js
 - **Hupe**: linken Stick drücken (PC: B) · **Sirene** als Polizist: Auto-Display (PC: N)
 - **Radio** und **Tanken** (an der Zapfsäule, PC: T) am Auto-Display · **Tuning-Werkstatt** an der 2. Tankstelle: Lack, Felgen, Neon und **Motor** (Stufe 1, Stufe 2, Turbo – schneller und mehr Sound)
 - **Chat**, **Immobilien** (Haus kaufen = eigener Startpunkt), **Tiere** (Hund Bello)
+- **Neue Autos**: Porsche 911, Jeep Grand Wagoneer, **Tesla Roadster** (200.000 € – am Auto-Display „Raumflug“: R-Trigger Schub, L-Trigger Bremse, linker Stick hoch/runter; PC: R/V) sowie **Polizei**, **Feuerwehr** (Wasserwerfer löscht Brände) und **Krankenwagen** mit Blaulicht + Sirene
+- **Hunger + Durst**: zwei Balken unten links und auf dem Handy. Im Supermarkt / an der Tankstelle Essen und Getränke vom Tisch greifen, aufs Kassenband legen, Handy rausholen und ans **NFC-Feld** halten (Liquid-Glass-Fenster mit Kontostand → Haken). Essen an den Mund = essen, Flasche kippen = trinken (PC: Q = aufheben, Maustaste halten = essen/trinken)
+- **Handy im Auto vergessen**: A drücken – es fliegt zu deiner Hand. Mitfahrer hören das Radio des Fahrers
 - **Bank**: Kontostand, Geld an andere Spieler überweisen, letzte Buchungen
 - **Einstellungen**: Klingelton wählen (antippen = Vorschau). Eigene Töne: mp3-Dateien in `assets/klingeltoene/` legen
 - Tag und Nacht (ein Tag = 40 Minuten). Geld, Haus, Hund, Tuning, Tank und Galerie werden gespeichert.

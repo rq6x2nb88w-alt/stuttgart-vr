@@ -639,8 +639,12 @@ const ITEX = (() => {
   const board = lines => { const [c, g] = C(512, 160); g.fillStyle = '#1f4a33'; g.fillRect(0, 0, 512, 160); g.fillStyle = 'rgba(240,240,230,.92)'; g.font = '600 25px system-ui'; g.textBaseline = 'top'; lines.forEach((l, i) => g.fillText(l, 22, 14 + i * 34)); return T(c, false); };
   const notes = (() => { const [c, g] = C(256, 160); g.fillStyle = '#b8895a'; g.fillRect(0, 0, 256, 160); [['Schulfest Fr.', '#fff59d'], ['AG Fußball', '#b3e5fc'], ['Mensa: Nudeln', '#c8e6c9'], ['Fundsachen', '#ffccbc'], ['Lesewoche!', '#e1bee7']].forEach(([t, col], i) => { const x = 10 + (i % 3) * 82, y = 12 + Math.floor(i / 3) * 74; g.fillStyle = col; g.fillRect(x, y, 74, 62); g.fillStyle = '#c62828'; g.beginPath(); g.arc(x + 37, y + 7, 4, 0, 7); g.fill(); g.fillStyle = '#333'; g.font = '600 12px system-ui'; g.fillText(t, x + 4, y + 32); }); return T(c, false); })();
   const signs = (() => { const [c, g] = C(512, 256); ['Obst & Gemüse', 'Getränke', 'Backwaren', 'Süßes & Snacks'].forEach((t, i) => { g.fillStyle = ['#2e7d32', '#1565c0', '#a1662f', '#c2185b'][i]; g.fillRect(0, i * 64, 512, 64); g.fillStyle = '#fff'; g.font = 'bold 40px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 256, i * 64 + 33); }); return T(c, false); })();
-  return { tiles, lino, goods, drinks, board, notes, signs };
+  const sign = (t, bg) => { const [c, g] = C(512, 160); g.fillStyle = bg; g.fillRect(0, 0, 512, 160); g.strokeStyle = 'rgba(255,255,255,.55)'; g.lineWidth = 8; g.strokeRect(10, 10, 492, 140); g.fillStyle = '#fff'; g.font = `bold ${t.length > 10 ? 54 : 72}px system-ui`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, 256, 82); return T(c, false); };
+  const nfc = (() => { const [c, g] = C(128, 128); g.fillStyle = '#00838f'; g.fillRect(0, 0, 128, 128); g.strokeStyle = '#fff'; g.lineWidth = 7; g.lineCap = 'round'; for (let i = 0; i < 4; i++) { g.beginPath(); g.arc(34, 64, 22 + i * 17, -.72, .72); g.stroke(); } g.fillStyle = '#fff'; g.beginPath(); g.arc(34, 64, 6, 0, 7); g.fill(); return T(c, false); })();
+  return { tiles, lino, goods, drinks, board, notes, signs, sign, nfc };
 })();
+// Shop: Verkaufstische mit Ware zum Greifen + Kassen mit NFC-Terminal (Ware + Bezahlen siehe Abschnitt "Hunger, Durst, Shop")
+const shopLanes = [], shopStands = [], shopSurf = [];
 function buildInteriors() {
   const goodsM = roomMat({ map: ITEX.goods, roughness: .7 }, .45);
   const drinkM = new THREE.MeshStandardMaterial({ map: ITEX.drinks, emissive: 0xffffff, emissiveMap: ITEX.drinks, emissiveIntensity: .55, roughness: .25 });
@@ -705,6 +709,33 @@ function buildInteriors() {
     const sd = { L: panel(), R: panel(), d0, d1, dw, c: toW((d0 + d1) / 2, HZ).setY(y0 + 1), k: 1, open: false, lock: S.home };
     slideDoors.push(sd);
     const reg = (x, y, z, name, cash, stars, t) => robSpots.push({ kind: 'kasse', name, p: toW(x, z).setY(y0 + y), cash, stars, time: t, cool: 0 });   // Kasse zum Ausrauben
+    const lanesHere = [];
+    // Bezahl-Terminal (Anzeige mit Summe + Kontostand, NFC-Fläche) + Ablagefläche für die Ware (zx0..zx1, zz0..zz1 in Raum-Koordinaten, Höhe zy)
+    const addLane = (name, px, pz, headY, supY, face, zx0, zx1, zz0, zz1, zy) => {
+      const tg = new THREE.Group(); tg.position.set(px, 0, pz); tg.rotation.y = face; grp.add(tg);
+      const dk = M(0x23272e, { roughness: .5 }), pole = new THREE.Mesh(BOX, dk), ph = headY - .18 - supY; pole.scale.set(.05, ph, .05); pole.position.y = supY + ph / 2; tg.add(pole);
+      const tilt = new THREE.Group(); tilt.position.y = headY; tilt.rotation.x = -.3; tg.add(tilt);
+      const body = new THREE.Mesh(BOX, dk); body.scale.set(.27, .36, .05); tilt.add(body);
+      const [dc, dg] = C(256, 192), dtex = T(dc, false), disp = new THREE.Mesh(new THREE.PlaneGeometry(.23, .172), new THREE.MeshBasicMaterial({ map: dtex, toneMapped: false })); disp.position.set(0, .06, .0265); tilt.add(disp);
+      const pad = new THREE.Mesh(new THREE.CircleGeometry(.04, 28), new THREE.MeshBasicMaterial({ map: ITEX.nfc, toneMapped: false })); pad.position.set(0, -.125, .0265); tilt.add(pad);
+      const ring = new THREE.Mesh(new THREE.RingGeometry(.045, .055, 32), new THREE.MeshBasicMaterial({ color: 0x4dd0e1, transparent: true, opacity: 0, toneMapped: false, depthWrite: false })); ring.position.set(0, -.125, .0275); tilt.add(ring);
+      const a = toW(zx0, zz0), b = toW(zx1, zz1);
+      const L = { name, g: dg, tex: dtex, ring, tilt, zone: { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z), y: y0 + zy }, items: [], total: 0, dirty: true, paidT: -99, pad: null, padN: null, nearD: 99 };
+      lanesHere.push(L); shopLanes.push(L); shopSurf.push({ ...L.zone }); return L;
+    };
+    // Verkaufstisch mit Schild; Ware liegt oben und auf dem unteren Brett (Plätze = shopStands)
+    const addStand = (label, bg, lx, lz, topT, lowT) => {
+      bx(2.6, .06, .95, lx, .9, lz, 0x8d6e4b); bx(2.5, .04, .85, lx, .45, lz, 0x8d6e4b);
+      for (const sx of [-1.2, 1.2]) for (const sz of [-.4, .4]) bx(.06, .9, .06, lx + sx, .45, lz + sz, 0x5d4037);
+      tq(roomMat({ map: ITEX.sign(label, bg), side: THREE.DoubleSide }, .6), [[lx - .9, 1.55, lz], [lx + .9, 1.55, lz], [lx + .9, 2.0, lz], [lx - .9, 2.0, lz]], U4);
+      for (const sx of [-.8, .8]) bx(.03, .6, .03, lx + sx, 1.25, lz, 0x555555);
+      col(lx - 1.3, lx + 1.3, lz - .48, lz + .48);
+      const a = toW(lx - 1.3, lz - .47), b = toW(lx + 1.3, lz + .47), box = { minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) };
+      shopSurf.push({ ...box, y: y0 + .93 }, { ...box, y: y0 + .47 });
+      for (const [yy, types] of [[.93, topT], [.47, lowT]]) types.forEach((type, i) => { const p = toW(lx + (i % 4) * .6 - .9, lz + (i < 4 ? -.17 : .17)); shopStands.push({ x: p.x, y: y0 + yy, z: p.z, type, item: null, t: 0, shop: S.kind }); });
+    };
+    const FT = ['burger', 'sandwich', 'apple', 'banana', 'chips', 'burger', 'apple', 'sandwich'], FL = ['chips', 'apple', 'banana', 'sandwich', 'burger', 'chips', 'banana', 'apple'].slice(0, 8);
+    const DT = ['water', 'cola', 'saft', 'water', 'cola', 'saft', 'water', 'cola'], DL = ['saft', 'water', 'cola', 'water', 'saft', 'cola', 'water', 'saft'];
     if (S.home !== undefined) {                                           // Haus zum Kaufen: Tür ist zu, nur für den Besitzer offen
       const a = toW(d0, HZ - .3), b = toW(d1, HZ); colliders.push({ minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z), lock: S.home });
       const H0 = homes[S.home]; H0.door = toW((d0 + d1) / 2, HZ + 2.5); H0.y0 = y0;
@@ -730,7 +761,9 @@ function buildInteriors() {
       for (const x of [-6, -10.5, -15]) {                                 // Kassen am Eingang
         bx(.8, .9, 2.6, x, .45, 8.3, 0x3a3f46); bx(.62, .02, 2.4, x, .91, 8.3, 0x111111); bx(.35, .25, .3, x - .15, 1.05, 9.3, 0x222831); bx(.06, .5, .06, x - .3, 1.15, 7.2, 0x888888); bx(.5, .9, .5, x + .75, .45, 9.4, 0x5b6470);
         col(x - .4, x + .4, 7, 9.6); reg(x - .15, 1.05, 9.3, 'Supermarkt-Kasse', [250, 600], 2, 4);
+        addLane('Kasse', x + .62, 6.78, 1.2, 0, Math.PI, x - .3, x + .3, 7.12, 9.4, .93);       // Band + NFC-Terminal am Ende zum Regal hin
       }
+      addStand('ESSEN', '#e65100', -2.9, 6.3, FT, FL); addStand('GETRÄNKE', '#1565c0', 2.9, 6.3, DT, DL);
       const fruit = [0x7cb342, 0xff9800, 0xfdd835, 0xe53935, 0x8e24aa, 0x43a047];
       for (let i = 0; i < 6; i++) {                                     // Obst & Gemüse
         const x = 8 + (i % 3) * 3.2, z = 8.3 + Math.floor(i / 3) * 2.2;
@@ -784,6 +817,8 @@ function buildInteriors() {
       bx(5, 1.05, .8, 6.5, .525, 2.2, 0x37474f); bx(5.1, .05, .9, 6.5, 1.075, 2.2, 0xb0bec5); bx(.4, .3, .35, 5.2, 1.25, 2.2, 0x212121);   // Theke + Kasse
       bx(.35, .45, .35, 8.4, 1.32, 2.15, 0x5d4037); bx(.2, .1, .2, 8.4, 1.6, 2.15, 0xc62828); col(4, 9, 1.8, 2.6);   // Kaffeemaschine
       reg(5.2, 1.25, 2.2, 'Tankstellen-Kasse', [300, 700], 2, 4);
+      addLane('Tankstellen-Kasse', 5.75, 2.4, 1.42, 1.1, 0, 6.2, 8.1, 1.9, 2.5, 1.1);        // Terminal auf der Theke, Ware daneben
+      addStand('SNACKS & DRINKS', '#00897b', 1.2, -2.5, FT, DT);
       bx(.5, 2.2, 5, ix - .25, 1.1, 1.5, 0x8d8d8d); tq(goodsM, [[ix - .51, .2, -1], [ix - .51, .2, 4], [ix - .51, 2.1, 4], [ix - .51, 2.1, -1]], [0, 0, 5 / 3, 0, 5 / 3, 1, 0, 1]); col(ix - .5, ix, -1, 4);
       for (const x of [-6.5, -2.5]) {                                   // Snack-Regale
         const z0 = -4, z1 = 2, L = z1 - z0;
@@ -804,7 +839,9 @@ function buildInteriors() {
     for (const [mat, list] of etex) add(ext, list, mat, true);
     cull(grp, 95);                                                      // Innenraum nur aus der Nähe zeichnen
     { const a = toW(-ix + .1, -iz + .1), b = toW(ix - .1, iz - .1); S.ent.fl.hollow = new THREE.Box3(V(Math.min(a.x, b.x), y0, Math.min(a.z, b.z)), V(Math.max(a.x, b.x), y0 + H, Math.max(a.z, b.z))); }
-    interiors.push({ kind: S.kind, x: S.x, z: S.z, grp, door: sd.c });
+    grp.updateMatrixWorld(true);
+    for (const L of lanesHere) { L.pad = L.tilt.localToWorld(V(0, -.125, .03)); L.padN = V(0, 0, 1).transformDirection(L.tilt.matrixWorld); L.cx = (L.zone.minX + L.zone.maxX) / 2; L.cz = (L.zone.minZ + L.zone.maxZ) / 2; }
+    interiors.push({ kind: S.kind, x: S.x, z: S.z, grp, door: sd.c, lanes: lanesHere, hollow: S.ent.fl.hollow, y0 });
   }
 }
 buildInteriors();
@@ -1029,11 +1066,18 @@ let carBoot = false;   // eigenes Auto fertig geladen (vorher nichts senden, son
 const vehicleMeta = { scooter: { seats: [V(0, 1.6, -.05)], half: V(.3, 1.2, .5), paint: 0x15171a } };
 const DEFAULT_META = { seats: [V(.37, 1.12, -.1), V(-.37, 1.12, -.1), V(.36, 1.12, -.95), V(-.36, 1.12, -.95)], half: V(.92, 1.45, 2.3), paint: 0x8a1010 };
 const metaOf = type => vehicleMeta[type] || DEFAULT_META;
-const NICE_NAMES = { jetta: 'VW Jetta (2024)', bmw: 'BMW (2024)', urus: 'Lamborghini Urus', taigo: 'VW Taigo', polo: 'VW Polo', van: 'Van', golf: 'VW Golf', mercedes: 'Mercedes', porsche: 'Porsche' };
+const NICE_NAMES = { jetta: 'VW Jetta (2024)', bmw: 'BMW (2024)', urus: 'Lamborghini Urus', taigo: 'VW Taigo', polo: 'VW Polo', van: 'Van', golf: 'VW Golf', mercedes: 'Mercedes', porsche: 'Porsche 911', roadster: 'Tesla Roadster', wagoneer: 'Jeep Grand Wagoneer', polizei: 'Polizeiauto', feuerwehr: 'Feuerwehr', rettung: 'Krankenwagen' };
+const CAR_PRICE = { roadster: 200000 };                                   // Tesla Roadster: 200.000 € (einmal kaufen, gehört dir dann für immer)
 const VEHICLES = [
   { id: 'scooter', name: 'E-Scooter', type: 'scooter' },
   { id: 'ferrari', name: 'Ferrari 458', type: 'car' },
+  // Einsatzfahrzeuge: Polizei = Jetta im Polizei-Lack, Feuerwehr + Krankenwagen sind eigene Modelle (Sirene + Blaulicht am Auto-Display)
+  { id: 'polizei', name: NICE_NAMES.polizei, type: 'car', file: 'assets/models/autos/jetta.glb', emerg: 'police' },
+  { id: 'feuerwehr', name: NICE_NAMES.feuerwehr, type: 'car', build: () => buildEmergency('fire'), emerg: 'fire' },
+  { id: 'rettung', name: NICE_NAMES.rettung, type: 'car', build: () => buildEmergency('ambulance'), emerg: 'ambulance' },
 ];
+const loadVehicleModel = v => v.build ? Promise.resolve({ scene: v.build(), animations: [] }) : v.file ? AS.loadUrl(v.file) : AS.loadCar();
+const ownsCar = v => !CAR_PRICE[v.id] || !!save.own?.[v.id];
 // E-Scooter (eigenes Modell)
 function buildScooter() {
   const g = new THREE.Group(), blk = M(0x15171a, { roughness: .5 }), alu = M(0xb9bec4, { metalness: .8, roughness: .3 }), acc = M(0x2fbf71, { roughness: .4 });
@@ -1051,7 +1095,12 @@ function setVehicleVisual(vis, chassis) { pcar.group.remove(pcar.vis); pcar.vis 
 // Fahrzeug holen (Garage) – erscheint neben dir
 async function getVehicle(id) {
   const v = VEHICLES.find(q => q.id === id); if (!v) return;
-  if (player.inCar) exitCar();
+  if (!ownsCar(v)) {                                                     // Tesla Roadster: erst kaufen
+    if (money < CAR_PRICE[v.id]) return msg(v.name + ' kostet ' + CAR_PRICE[v.id].toLocaleString('de-DE') + ' € – dir fehlen ' + Math.ceil(CAR_PRICE[v.id] - money).toLocaleString('de-DE') + ' €', 3.5);
+    money -= CAR_PRICE[v.id]; (save.own ||= {})[v.id] = 1; addTx(v.name + ' gekauft', -CAR_PRICE[v.id]); writeSave(); uiTone(SND.arrive);
+  }
+  if (player.inCar) exitCar(true);
+  jetOff(true);
   msg('Hole ' + v.name + ' …', 2);
   if (v.type === 'scooter') {
     if (phone.where === 'holder') setPhone('pocket');                  // Scooter hat keinen Magneten
@@ -1061,7 +1110,7 @@ async function getVehicle(id) {
     Object.assign(pcar, { half: V(.3, 1.2, .5), wheels: [], head: V(0, 1.6, -.05), seatHint: V(0, 1.2, 0), exitPos: V(.9, 0, 0), doors: [], seats: [V(0, 1.6, -.05)], screen: null, cluster: null, rainFx: null, doorGlass: null, wins: null, winT: null, dmg: null, dents: [], crack: null });
     pcar.hit.scale.set(.5, 1.2, 1); pcar.hit.position.y = .6; vehicleCache.scooter = s.clone(true);
   } else {
-    try { const g = v.file ? await AS.loadUrl(v.file) : await AS.loadCar(); upgradePlayerCar(g, v.id); }
+    try { const g = await loadVehicleModel(v); upgradePlayerCar(g, v.id); }
     catch (e) { msg('Modell konnte nicht geladen werden: ' + v.name, 4); return; }
   }
   vehicle = v; resetVehicle(true);
@@ -1116,7 +1165,7 @@ function needRemoteModel(type) {
   if (vehicleCache[type] || remoteLoads[type] || !carBoot) return;
   const v = VEHICLES.find(q => q.id === type); if (!v || v.type !== 'car') return;
   remoteLoads[type] = true;
-  (v.file ? AS.loadUrl(v.file) : AS.loadCar()).then(g => { if (!vehicleCache[type]) upgradePlayerCar(g, type, false); })
+  loadVehicleModel(v).then(g => { if (!vehicleCache[type]) upgradePlayerCar(g, type, false); })
     .catch(e => console.warn('Auto für andere Spieler konnte nicht geladen werden:', type, e));
 }
 
@@ -1235,7 +1284,8 @@ class PSys {
       life[i] -= dt; const k = Math.max(0, life[i] / max[i]);
       vel[i * 3 + 1] += buoy * dt;
       pos[i * 3] += vel[i * 3] * dt; pos[i * 3 + 1] += vel[i * 3 + 1] * dt; pos[i * 3 + 2] += vel[i * 3 + 2] * dt;
-      if (this.smoke) { const c = this.white ? .82 + .15 * (1 - k) : .25 + .2 * (1 - k); col.set([c, c, c, k * (1 - k) * 2.2], i * 4); }
+      if (this.tint) col.set([this.tint[0], this.tint[1], this.tint[2], Math.min(1, k * 1.6) * .85], i * 4);
+      else if (this.smoke) { const c = this.white ? .82 + .15 * (1 - k) : .25 + .2 * (1 - k); col.set([c, c, c, k * (1 - k) * 2.2], i * 4); }
       else col.set([1, .25 + .65 * k * k, .08 * k, k], i * 4);
     }
     this.g.attributes.position.needsUpdate = true; this.g.attributes.color.needsUpdate = true;
@@ -1488,6 +1538,7 @@ function applyEv(m) {
   else if (m.k === 'tornado') startTornado(m);
   else if (m.k === 'tsunami') startTsunami(m);
   else if (m.k === 'dstop') stopDisasters();
+  else if (m.k === 'ext') { const f = flammables[m.i]; if (f && f.owner !== pcar) extinguish(f); }       // Feuerwehr hat gelöscht
   else if (m.k === 'vil') { setVillain(m.i); }
   else if (m.k === 'boom') { const f = flammables[m.i]; if (f && f.owner !== pcar) boom(f, false); }
   else if (m.k === 'prop') { const p = props[m.i]; if (p) breakProp(p); }
@@ -1523,7 +1574,7 @@ function applySnap(s) {
 function carDestroyed(c) {
   c.dead = true; c.speed = 0; c.bodyMat.color.copy(BLACK); c.glassMat.visible = false;
   c.group.rotation.z = rand(-.1, .1); c.group.position.y = -.1;
-  if (c.player && player.inCar) { exitCar(); die('Auto explodiert'); }
+  if (c.player && player.inCar) { exitCar(true); die('Auto explodiert'); }
 }
 function breakProp(p) {
   if (p.broken) return; p.broken = true; p.mesh.visible = false; if (p.model) { p.model.visible = false; p.model.userData.gone = true; } p.fl.done = true;
@@ -1637,7 +1688,7 @@ deathFx.renderOrder = 998; camera.add(deathFx);
 function die(why) {
   if (player.dead) return;
   player.dead = true; player.deadT = 0; msg(why + ' – Respawn an der Tankstelle', 4);
-  if (player.inCar) exitCar();
+  if (player.inCar) exitCar(true);
   if (player.ride) leaveRide('');
 }
 function respawn() {
@@ -1729,6 +1780,8 @@ function icon(g, kind, x, y, s = 1) {
   if (kind === 'set') { g.lineWidth = 7; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(Math.cos(a) * 12, Math.sin(a) * 12); g.lineTo(Math.cos(a) * 23, Math.sin(a) * 23); g.stroke(); } g.beginPath(); g.arc(0, 0, 15, 0, 7); g.fill(); g.fillStyle = '#607d8b'; g.beginPath(); g.arc(0, 0, 7, 0, 7); g.fill(); }
   if (kind === 'money') { g.beginPath(); g.roundRect(-26, -15, 52, 30, 5); g.fill(); g.fillStyle = '#1b5e20'; g.beginPath(); g.arc(0, 0, 9, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('€', 0, 1); }
   if (kind === 'power') { g.lineWidth = 5; g.beginPath(); g.arc(0, 2, 17, -Math.PI * .3, Math.PI * 1.3); g.stroke(); g.beginPath(); g.moveTo(0, -22); g.lineTo(0, 2); g.stroke(); }
+  if (kind === 'jet') { g.beginPath(); g.moveTo(0, -26); g.quadraticCurveTo(14, -10, 11, 12); g.lineTo(-11, 12); g.quadraticCurveTo(-14, -10, 0, -26); g.fill(); g.fillStyle = '#00838f'; g.beginPath(); g.arc(0, -6, 5, 0, 7); g.fill(); g.fillStyle = '#ffb300'; g.beginPath(); g.moveTo(-7, 14); g.lineTo(7, 14); g.lineTo(0, 28); g.closePath(); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(-11, 4); g.lineTo(-19, 14); g.lineTo(-11, 12); g.fill(); g.beginPath(); g.moveTo(11, 4); g.lineTo(19, 14); g.lineTo(11, 12); g.fill(); }
+  if (kind === 'hose') { g.lineWidth = 6; g.beginPath(); g.moveTo(-22, 16); g.lineTo(0, 16); g.lineTo(14, 2); g.stroke(); g.fillStyle = '#fff'; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(14 + i * 4, 2 - i * 3 + (i * i) * .45, 3, 0, 7); g.fill(); } g.beginPath(); g.arc(-22, 16, 5, 0, 7); g.fill(); }
   if (kind === 'siren') { g.fillStyle = '#ff2a2a'; g.beginPath(); g.arc(-8, 2, 10, Math.PI, 0); g.fill(); g.fillStyle = '#2a6bff'; g.beginPath(); g.arc(10, 2, 10, Math.PI, 0); g.fill(); g.fillStyle = '#fff'; g.fillRect(-22, 4, 44, 8); }
   g.restore();
 }
@@ -1742,31 +1795,36 @@ function drawApp() {
     g.fillStyle = a === 'home' ? gr : '#111318'; g.fillRect(0, 0, PW, PH);
   }
   if (a === 'home') {
-    tx(g, hhmm(), PW / 2, 128, 72, '#fff', 'center', 300);
-    tx(g, new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }), PW / 2, 180, 20);
+    tx(g, hhmm(), PW / 2, 112, 68, '#fff', 'center', 300);
+    tx(g, new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }), PW / 2, 162, 19);
     const apps = [['GPS', '#2fa84f', 'gps'], ['Kamera', '#555', 'camera'], ['Telefon', '#2fc14f', 'tel'], ['Galerie', '#f39c12', 'gal'],
       ['Garage', '#3b6fd8', 'garage'], ['Missionen', '#d8402b', 'mis'], ['Jobs', '#6d4c41', 'jobs'], ['Chat', '#00897b', 'chat'],
       ['Immobilien', '#5e35b1', 'immo'], ['Tiere', '#ef6c00', 'tiere'], ['Bank', '#1b5e20', 'bank'], ['Einstellung', '#607d8b', 'set']];
     if (isAdmin()) apps.push(['Admin', '#b3001b', 'admin']);             // nur für Gabriel
     apps.forEach(([n, c, id], i) => {
       const k = ease((at - i * .07) / .35); if (k <= 0) return;
-      const x = 14 + (i % 4) * 85, y = 212 + Math.floor(i / 4) * 104 + (1 - k) * 30;
+      const x = 14 + (i % 4) * 85, y = 224 + Math.floor(i / 4) * 100 + (1 - k) * 30;
       g.globalAlpha = k; rr(g, x, y, 72, 72, 18, c); icon(g, id, x + 36, y + 36, .78); tx(g, n, x + 36, y + 86, n.length > 8 ? 12 : 14); g.globalAlpha = 1;
       btn(x, y, 72, 96, 'app:' + id);
     });
-    if (phone.missed) { rr(g, 20, 630, PW - 40, 36, 12, 'rgba(0,0,0,.45)'); tx(g, 'Verpasster Anruf: ' + phone.missed, PW / 2, 648, 15); }
+    if (phone.missed) { rr(g, 40, 184, PW - 80, 28, 12, 'rgba(0,0,0,.45)'); tx(g, 'Verpasster Anruf: ' + phone.missed, PW / 2, 198, 14); }
     const J = job.id ? JOBS.find(j => j.id === job.id).name : '';
-    tx(g, (net.online ? `Online: ${net.players.size + 1}` : 'Offline') + `  ·  ${Math.round(money)} €  ·  ${Math.round(player.hp)} HP` + (save.fuel < 1 && vehicle.type !== 'scooter' ? `  ·  Tank ${Math.round(save.fuel * 100)} %` : ''), PW / 2, 676, 14, net.online ? '#9f9' : '#f99');
-    if (J || wanted.stars) tx(g, (J ? 'Job: ' + J : '') + (J && wanted.stars ? '   ' : '') + (wanted.stars ? 'Fahndungsstufe ' + wanted.stars : ''), PW / 2, 700, 14, wanted.stars ? '#ffd21a' : '#cfd8dc');
+    // Hunger- und Durst-Balken
+    needIcon(g, 'food', 30, 650); needBar(g, 50, 642, 118, save.hunger, 'food'); needIcon(g, 'drink', 196, 650); needBar(g, 216, 642, 118, save.thirst, 'drink');
+    tx(g, (net.online ? `Online: ${net.players.size + 1}` : 'Offline') + `  ·  ${Math.round(money)} €  ·  ${Math.round(player.hp)} HP` + (save.fuel < 1 && vehicle.type !== 'scooter' ? `  ·  Tank ${Math.round(save.fuel * 100)} %` : ''), PW / 2, 686, 14, net.online ? '#9f9' : '#f99');
+    if (J || wanted.stars) tx(g, (J ? 'Job: ' + J : '') + (J && wanted.stars ? '   ' : '') + (wanted.stars ? 'Fahndungsstufe ' + wanted.stars : ''), PW / 2, 708, 14, wanted.stars ? '#ffd21a' : '#cfd8dc');
   } else if (a === 'gps') drawMap(g);
   else if (a === 'garage') {
     tx(g, 'Garage', 24, 100, 34, '#fff', 'left', 700); tx(g, 'Fahrzeug holen – erscheint vor dir', 24, 132, 15, '#aaa', 'left');
     VEHICLES.forEach((v, i) => {
-      const y = 155 + i * 58, cur = v.id === vehicle.id;
-      rr(g, 16, y, PW - 32, 50, 12, cur ? '#2a4a8a' : '#1e2129'); tx(g, v.name, 32, y + 25, 19, '#fff', 'left'); if (cur) tx(g, 'aktiv', PW - 32, y + 25, 14, '#9cf', 'right');
-      btn(16, y, PW - 32, 50, 'veh:' + v.id);
+      const y = 150 + i * 50, cur = v.id === vehicle.id, lock = !ownsCar(v);
+      rr(g, 16, y, PW - 32, 45, 12, cur ? '#2a4a8a' : '#1e2129'); tx(g, v.name, 32, y + 22, 18, '#fff', 'left');
+      if (cur) tx(g, 'aktiv', PW - 32, y + 22, 14, '#9cf', 'right');
+      else if (lock) tx(g, CAR_PRICE[v.id].toLocaleString('de-DE') + ' €', PW - 32, y + 22, 15, money >= CAR_PRICE[v.id] ? '#ffd54f' : '#ff8a80', 'right', 800);
+      else if (v.emerg) tx(g, 'Sirene', PW - 32, y + 22, 13, '#90caf9', 'right', 600);
+      btn(16, y, PW - 32, 45, 'veh:' + v.id);
     });
-    const yb = 155 + VEHICLES.length * 58 + 6;
+    const yb = 150 + VEHICLES.length * 50 + 6;
     rr(g, 16, yb, PW - 32, 48, 12, '#444'); tx(g, 'Fahrzeug reparieren / holen', PW / 2, yb + 24, 17); btn(16, yb, PW - 32, 48, 'vreset');
     if (!VEHICLES.some(v => v.file)) { tx(g, 'Eigene Autos (BMW, Urus …):', PW / 2, yb + 80, 14, '#aaa'); tx(g, '.glb in assets/models/autos/', PW / 2, yb + 100, 14, '#aaa'); }
   } else if (a === 'jobs') {
@@ -1995,7 +2053,7 @@ function drawApp() {
 // Wie oft das Handy-Bild neu gezeichnet wird: nur so oft wie nötig (jedes Neuzeichnen = Textur-Upload, kostet auf der Quest)
 function phoneRate() {
   const a = phone.app, at = time - phone.appT;
-  if (phone.anim || at < .8 || (phone.ripple && time - phone.ripple.t < .4) || phone.flash > 0) return 1 / 30;   // Übergänge/Antippen: flüssig
+  if (phone.anim || at < .8 || (phone.ripple && time - phone.ripple.t < .4) || phone.flash > 0 || phone.pay) return 1 / 30;   // Übergänge/Antippen/Bezahlen: flüssig
   if (phone.notif && time < phone.notif.until) return 1 / 20;
   if (a === 'incoming') return 1 / 20;
   if (a === 'gps' || a === 'view') return 1 / 15;
@@ -2015,6 +2073,7 @@ function composePhone() {
     pg.globalAlpha = 1;
     if (k >= 1) phone.anim = null;
   } else pg.drawImage(appCan, 0, 0);
+  drawPayPopup(pg);                                                       // Bezahlen-Fenster (Liquid Glass) liegt über jeder App
   phoneTex.needsUpdate = true;
 }
 
@@ -2103,6 +2162,24 @@ function endCall(text) {
   if (text && phone.call) { phone.call.state = 'offline'; phone.call.text = text; phone.drawT = 0; const c = phone.call; setTimeout(() => { if (phone.call === c) { phone.call = null; openApp('home'); } }, 2000); return; }
   phone.call = null; phone.seq = null; openApp('home');
 }
+// Handy liegt am Magneten im Auto, du bist draußen: A drücken -> es fliegt zu deiner Hand
+function summonPhone() {
+  phoneG.updateWorldMatrix(true, false); const from = phoneG.getWorldPosition(V());
+  setPhone('hand'); phone.cool = time + 1.5;
+  phone.tele = { t0: time, from, far: from.distanceTo(headWorld) > 45, fin: null };
+  playAt(SND.whoosh, from, .5, 6); haptic(handBy('left'), .4, 90);
+  for (let i = 0; i < 24; i++) fireSmall.spawn(from.x, from.y, from.z, rand(-1.2, 1.2), rand(.4, 2.6), rand(-1.2, 1.2), rand(.3, .8));
+  msg('Dein Handy fliegt zu dir', 2);
+}
+function updTele(dt) {
+  const T = phone.tele; if (!T || !phoneG.parent) return;
+  if (!T.fin) T.fin = phoneG.position.clone();
+  const k = (time - T.t0) / .55;
+  if (k >= 1 || T.far) { phoneG.position.copy(T.fin); phoneG.rotation.z = 0; phone.tele = null; return; }
+  const e = ease(k), end = phoneG.parent.localToWorld(T.fin.clone()), w = V().lerpVectors(T.from, end, e); w.y += Math.sin(e * Math.PI) * .7;
+  phoneG.position.copy(phoneG.parent.worldToLocal(w)); phoneG.rotation.z = (1 - e) * Math.PI * 5;
+  fireSmall.spawn(w.x, w.y, w.z, rand(-.3, .3), rand(0, .6), rand(-.3, .3), rand(.2, .45));
+}
 // Tipp wird sofort verarbeitet (flüssiges Handy)
 function phoneClickUV(uv) {
   if (phone.seq) return;
@@ -2140,6 +2217,7 @@ function updPhone(dt) {
   if (phone.raise < 1) { phone.raise = Math.min(1, phone.raise + dt / .35); phoneBody.position.y = -.12 * (1 - ease(phone.raise)); phoneBody.rotation.x = .9 * (1 - ease(phone.raise)); }
   else { phoneBody.position.y = 0; phoneBody.rotation.x = 0; }
   if (!phoneG.visible) return;
+  updTele(dt);
   // verzögerte Taps
   for (let i = phone.queue.length - 1; i >= 0; i--) {
     const q = phone.queue[i]; if (time < q.at) continue; phone.queue.splice(i, 1);
@@ -2483,6 +2561,8 @@ function carAction(a) {
   if (a === 'radiooff') { radio.on = false; msg('Radio aus', 1.5); return; }
   if (a === 'vol:+' || a === 'vol:-') { save.vol = clamp(save.vol + (a === 'vol:+' ? .1 : -.1), 0, 1); return; }
   if (a === 'siren') { setSiren(!job.siren); return; }
+  if (a === 'jet') { jetOn(); return; }
+  if (a === 'hose') { setHose(!job.hose); return; }
   if (a === 'fuel') { startFuel(); return; }
   if (a.startsWith('tn:')) { const [, k, i] = a.split(':'); buyTune(k, +i); return; }
   if (a.startsWith('app:')) {
@@ -2500,7 +2580,8 @@ const cbtn = (x, y, w, h, a) => cbtnList.push({ x, y, w, h, a });
 function localCarView() {
   return { btns: cp.btns, conn: cp.conn, app: cp.app, call: phone.call, callMin: cp.callMin, locked: pcar.locked, appT: cp.appT, name: net.name, veh: vehicle.name,
     players: [...net.players.values()], nav, speed: Math.abs(pcar.speed), pos: pcar.group.position, heading: pcar.heading, alert: cp.alert, banner: cp.banner, ripple: cp.ripple,
-    radio: radio.on ? radio.st : -1, vol: save.vol, fuel: save.fuel, canFuel: canFuel(), filling: fuelInfo.filling, onPad: onPad(), police: job.id === 'police', siren: job.siren, tune: save.tune[vehicle.id] || {}, local: true };
+    radio: radio.on ? radio.st : -1, vol: save.vol, fuel: save.fuel, canFuel: canFuel(), filling: fuelInfo.filling, onPad: onPad(), police: canSiren(), siren: job.siren, tune: save.tune[vehicle.id] || {}, local: true,
+    jet: vehicle.id === 'roadster', jetOn: !!pcar.jet?.on, emerg: vehicle.emerg || '', hose: !!job.hose };
 }
 // Text auf mehrere Zeilen umbrechen
 function wrapText(g, s, maxW) { const out = []; let line = ''; for (const w of s.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; }
@@ -2602,13 +2683,15 @@ function drawCarView(g, W) {
     tx(g, W.conn ? 'Telefon verbunden' : 'Kein Telefon verbunden – hol dein Handy raus', X0 + 24, 64, 13, W.conn ? '#7fdc8f' : '#f0b45a', 'left', 600);
     const tiles = [['tel', 'Telefon', '#34c759'], ['map', 'Karte', '#2b6cff'], ['radio', W.radio >= 0 ? STATIONS[W.radio].name : 'Radio', '#8e24aa']];
     if (W.police) tiles.push(['siren', W.siren ? 'Sirene aus' : 'Sirene an', W.siren ? '#c62828' : '#1e5bd8']);
-    const tw = tiles.length > 3 ? 120 : 150, gap = tiles.length > 3 ? 18 : 20;
+    if (W.jet) tiles.push(['jet', W.jetOn ? 'Raumflug aus' : 'Raumflug', W.jetOn ? '#c62828' : '#00838f']);
+    if (W.emerg === 'fire') tiles.push(['hose', W.hose ? 'Wasser aus' : 'Wasserwerfer', W.hose ? '#c62828' : '#0277bd']);
+    const tw = tiles.length > 4 ? 96 : tiles.length > 3 ? 120 : 150, gap = tiles.length > 4 ? 14 : tiles.length > 3 ? 18 : 20;
     tiles.forEach(([id, n, c], i) => {
       const k = ease((time - W.appT - i * .08) / .3), x = cx - (tiles.length * (tw + gap) - gap) / 2 + i * (tw + gap), y = 110 + (1 - k) * 20;
-      g.globalAlpha = Math.max(0, k) * (W.conn || id === 'radio' || id === 'siren' ? 1 : .35); rr(g, x, y, tw, tw, 30, c);
-      if (id === 'tel') icon(g, 'tel', x + tw / 2, y + tw / 2, 1.4); else if (id === 'map') navArrow(g, 'gerade', x + tw / 2, y + tw / 2 + 4, 1.5); else icon(g, id, x + tw / 2, y + tw / 2, 1.5);
+      g.globalAlpha = Math.max(0, k) * (W.conn || id === 'radio' || id === 'siren' || id === 'jet' || id === 'hose' ? 1 : .35); rr(g, x, y, tw, tw, 30, c);
+      if (id === 'tel') icon(g, 'tel', x + tw / 2, y + tw / 2, 1.4); else if (id === 'map') navArrow(g, 'gerade', x + tw / 2, y + tw / 2 + 4, 1.5); else icon(g, id, x + tw / 2, y + tw / 2, tw < 110 ? 1.2 : 1.5);
       tx(g, n, x + tw / 2, y + tw + 26, tiles.length > 3 ? 14 : 17, '#fff', 'center', 600); g.globalAlpha = 1;
-      cbtn(x, y, tw, tw + 40, id === 'siren' ? 'siren' : 'app:' + id);
+      cbtn(x, y, tw, tw + 40, id === 'siren' || id === 'jet' || id === 'hose' ? id : 'app:' + id);
     });
   } else if (W.app === 'tel') {
     tx(g, 'Telefon', X0 + 20, 36, 24, '#fff', 'left', 700); tx(g, 'Spieler online – antippen zum Anrufen', X0 + 20, 62, 13, '#99a', 'left', 500);
@@ -2974,8 +3057,10 @@ function enterCar() {
   ensureEngine();
   msg(vehicle.type === 'scooter' ? 'R-Trigger Gas · L-Trigger Bremse · linker Stick lenken · B absteigen' : 'Lenkrad greifen · R-Trigger Gas · L-Trigger Bremse · B Aussteigen', 5);
 }
-function exitCar() {
+function exitCar(force) {
+  if (!force && pcar.jet?.on && pcar.jet.alt > 1.2) { msg('Erst landen – am Display „Raumflug aus“ oder mit dem linken Stick runter', 3); return; }
   player.inCar = false; if (pcar.doors[0]) pcar.doors[0].a = 1;
+  if (pcar.jet?.on) jetOff(true);
   for (const h of hands) if (h.held?.type === 'wheel') h.held = null;
   // Handy am Magneten bleibt im Auto (nimmt auch weiter auf, wenn es gerade filmt)
   if (phone.where === 'holder') msg('Dein Handy bleibt am Magneten im Auto', 2.5);
@@ -3027,6 +3112,7 @@ function updPlayerCar(dt) {
   // Lenkrad dreht in die gleiche Richtung wie deine Hände
   if (!sc) { c.wheelSpin.rotation.z = c.spin; if (c.brakeMat) c.brakeMat.emissiveIntensity = c.dmg?.tl ? 0 : brk > .05 ? 4 : .5; }
   if (c.fly) { carFlight(c, dt); return; }                              // vom EF5-Tornado erfasst
+  if (c.jet?.on && !sc && !c.dead) { jetFly(c, dt, thr, brk); return; } // Roadster im Raumflug
   const inAir = !!c.air;
   if (inAir) { thr = 0; brk = 0; }   // in der Luft greifen die Räder nicht
   if (!sc && save.fuel <= 0) { if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Tank leer! Handy → Garage → Reparieren/holen bringt Benzin (50 €)', 3); } thr = 0; }   // Tank leer
@@ -3151,6 +3237,86 @@ function crash(imp, p) {
   // statt Feuer: echte Schäden (Dellen, kaputte Scheinwerfer, Scheiben)
   if (p && imp > 8) carDamage(pcar, imp, p);
 }
+
+// ===================================================================
+// Tesla Roadster "Raumflug" (Raketen-Paket): am Auto-Display einschalten, dann hebt er ab.
+// R-Trigger = Schub, L-Trigger = Bremse, Lenkrad = lenken, linker Stick hoch/runter = steigen/sinken (PC: R / V)
+// ===================================================================
+const jetFlame = new THREE.ConeGeometry(.12, 1, 10, 1, true).translate(0, -.5, 0);
+const jetFlameMat = new THREE.MeshBasicMaterial({ color: 0xa8e6ff, transparent: true, opacity: .8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+function jetMakeFx(parent, half) {
+  const g = new THREE.Group(); g.name = 'jetfx';
+  for (const [sx, sz] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) { const m = new THREE.Mesh(jetFlame, jetFlameMat); m.position.set(sx * half.x * .74, .16, sz * half.z * .62); m.userData.ph = Math.random() * 9; g.add(m); }
+  g.visible = false; parent.add(g); return g;
+}
+let jetNoiseBuf = null;
+function jetVoice() {
+  if (!jetNoiseBuf) { let l = 0; jetNoiseBuf = mkBuf(2, (t, r) => { l += (r - l) * .07; return l * 2.4; }); }
+  const src = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  src.buffer = jetNoiseBuf; src.loop = true; f.type = 'lowpass'; f.frequency.value = 600; g.gain.value = 0; src.connect(f); f.connect(g); src.start();
+  const pa = new THREE.PositionalAudio(listener); pa.setNodeSource(g); pa.setRefDistance(9); pa.setRolloffFactor(1.1);
+  return { f, g, pa, stop() { try { src.stop(); g.disconnect(); } catch (e) { } } };
+}
+// Flammen + Triebwerksgeräusch eines Autos (eigenes oder fremdes) je nach Schub
+function jetAnimate(o, fx, on, thrust, dt, parentForSnd) {
+  if (!fx) return;
+  fx.visible = on;
+  if (on) for (const m of fx.children) { m.scale.set(1 + Math.random() * .25, (.5 + thrust * 1.5) * (.8 + Math.random() * .4), 1 + Math.random() * .25); }
+  if (on && !o.jetSnd && AC.state === 'running') { o.jetSnd = jetVoice(); parentForSnd.add(o.jetSnd.pa); }
+  if (o.jetSnd) { o.jetSnd.g.gain.value = on ? .1 + thrust * .5 : 0; o.jetSnd.f.frequency.value = 350 + thrust * 1400; if (!on && o.jetSnd.g.gain.value === 0) { o.jetSnd.stop(); o.jetSnd.pa.parent?.remove(o.jetSnd.pa); o.jetSnd = null; } }
+}
+function jetOn() {
+  const c = pcar; if (vehicle.id !== 'roadster' || !player.inCar || c.dead) return;
+  if (c.jet?.on) { if (c.jet.alt > 1.2) { c.jet.land = true; msg('Landeanflug …', 2); } else jetOff(); return; }
+  c.jet = { on: true, alt: 0, vy: 0, thrust: .3, fx: c.jet?.fx || jetMakeFx(c.group, c.half), land: false };
+  c.air = false; c.vy = 0; playAt(SND.rev, c.group.position, 1.2, 8);
+  msg(xrOn() ? 'Raumflug: R-Trigger Schub · L-Trigger Bremse · linker Stick hoch/runter' : 'Raumflug: W Schub · S Bremse · R hoch · V runter', 5);
+}
+function jetOff(silent) {
+  const c = pcar, J = c.jet; if (!J?.on) return;
+  J.on = false; J.alt = 0; jetAnimate(J, J.fx, false, 0, 0, c.group);
+  c.slS = c.sdS = 0; c.air = false; c.vy = 0;
+  if (!silent) msg('Raumflug aus', 2);
+}
+function jetFly(c, dt, thr, brk) {
+  const J = c.jet, g = c.group; let up = 0;
+  if (player.inCar) {
+    if (xrOn()) { const L = handBy('left'); up = -(L?.gp?.axes[3] || 0); if (Math.abs(up) < .2) up = 0; }
+    else up = (desk.keys.KeyR ? 1 : 0) - (desk.keys.KeyV ? 1 : 0);
+  }
+  J.t = (J.t || 0) + dt;
+  if (J.land) up = -.6;
+  else if (!up && J.t < 5 && J.alt < 3) up = clamp((3 - J.alt) * .6, .12, 1);   // beim Einschalten erst auf ca. 3 m steigen
+  J.vy += (up * 22 - J.vy) * Math.min(1, dt * 1.8);
+  J.alt = Math.min(700, Math.max(0, J.alt + J.vy * dt));
+  if (thr > .05) c.speed += 36 * thr * dt;
+  if (brk > .05) c.speed -= 50 * brk * dt;
+  c.speed -= c.speed * .4 * dt; c.speed = clamp(c.speed, -20, 95);
+  c.steerS = (c.steerS || 0) + (-(c.spin / 4.7) * .6 - (c.steerS || 0)) * Math.min(1, dt * 10);
+  c.yawRate = c.steerS * 2.2; c.heading += c.yawRate * dt;
+  g.position.x += Math.sin(c.heading) * c.speed * dt; g.position.z += Math.cos(c.heading) * c.speed * dt;
+  if (J.alt < 40) for (const lz of [1.5, -1.5]) {                          // unter Hausdachhöhe: nicht durch Gebäude
+    const p = g.localToWorld(v1.set(0, 0, lz)), r = 1.05;
+    for (const k of colliders) if (p.x > k.minX - r && p.x < k.maxX + r && p.z > k.minZ - r && p.z < k.maxZ + r) {
+      const dx1 = p.x - (k.minX - r), dx2 = (k.maxX + r) - p.x, dz1 = p.z - (k.minZ - r), dz2 = (k.maxZ + r) - p.z, m = Math.min(dx1, dx2, dz1, dz2);
+      if (m === dx1) g.position.x -= dx1; else if (m === dx2) g.position.x += dx2; else if (m === dz1) g.position.z -= dz1; else g.position.z += dz2;
+      crash(Math.abs(c.speed) * .6, p); c.speed *= -.2;
+    }
+  }
+  const gy = surfaceAt(g.position.x, g.position.z), hover = Math.sin(time * 2.1) * .04 * Math.min(1, J.alt / 3);
+  g.position.y = gy + J.alt + hover;
+  // Lage: Nase hoch beim Steigen, runter bei Schub, in Kurven neigen
+  const wantP = clamp(J.vy * .022 - thr * .07 + brk * .04, -.45, .45), wantR = clamp(c.steerS * Math.min(1, Math.abs(c.speed) / 40) * 1.1, -.6, .6);
+  c.slS = (c.slS || 0) + (wantP - (c.slS || 0)) * Math.min(1, dt * 2.5); c.sdS = (c.sdS || 0) + (wantR - (c.sdS || 0)) * Math.min(1, dt * 2.5);
+  g.rotation.set(-c.slS, c.heading, c.sdS, 'YXZ'); g.updateMatrixWorld(true);
+  c.susOut = [0, 0, 0]; c.air = false;
+  for (const w of c.wheels) { w.spin.rotation.x += c.speed / .34 * dt * .2; if (w.front) w.steer.rotation.y = 0; w.steer.position.y = w.c.y - .05; }
+  J.thrust += (clamp(.3 + thr * .7 + Math.abs(up) * .4, 0, 1) - J.thrust) * Math.min(1, dt * 4);
+  jetAnimate(J, J.fx, true, J.thrust, dt, g);
+  if (engine) engine.pa.setVolume(0);
+  dashRoad(0, dt);
+  if (J.t > 2 && J.alt <= .02 && J.vy <= .3 && up <= 0) { jetOff(); if (Math.abs(c.speed) > 6) c.speed *= .5; }   // gelandet
+}
 function seatPlayer() {
   if (vehicle.type === 'scooter') {   // auf dem Scooter steht man: echte Kopfhöhe, nur Position/Richtung folgen
     pcar.group.updateMatrixWorld(true);
@@ -3171,6 +3337,7 @@ function seatPlayer() {
 // Auto-Extras: Dashcam, Fenster (X/Y), Unfallschäden (statt Feuer), Türgeräusche
 // ===================================================================
 let lpD = 0;
+SND.splash = (() => { let l = 0; return mkBuf(.5, (t, r) => { l += (r - l) * .25; return (r * .5 + l) * Math.min(1, t * 40) * Math.exp(-t * 5) * .5; }); })();
 SND.doorOpen = mkBuf(.4, (t, r) => (t < .025 ? r * (1 - t / .025) * .7 : 0) + (t > .05 && t < .075 ? r * (1 - (t - .05) / .025) * .45 : 0) + Math.sin(2 * Math.PI * 160 * t) * Math.exp(-t * 25) * .3);
 SND.doorClose = mkBuf(.55, (t, r) => { lpD += (r - lpD) * .06; return Math.sin(2 * Math.PI * 58 * t) * Math.exp(-t * 13) * 1.1 + lpD * Math.exp(-t * 18) * 2.2 + (t < .012 ? r * .6 : 0) + (t > .03 && t < .04 ? r * .25 : 0); });
 SND.glass = mkBuf(.9, (t, r) => { let s = r * Math.exp(-t * 9) * .45; for (const f of [3100, 4700, 6900, 5300, 8200]) s += Math.sin(2 * Math.PI * f * t + f) * Math.exp(-t * (6 + f / 900)) * .1; return s; });
@@ -3700,6 +3867,7 @@ function tryGrab(h) {
   // Handy vom Magneten nehmen (auch von außen durch die offene Tür / das Fenster)
   if (phone.where === 'holder' && phoneG.getWorldPosition(v1).distanceTo(p) < .15) { setPhone('hand'); phone.cool = time + 1.5; return; }
   if (dashGrab(h, p)) return;                                            // heruntergefallene Dashcam aufheben
+  { const itg = nearestItem(p, .22); if (itg) { holdItem(itg, h); return; } }   // Essen / Getränke aus dem Regal nehmen
   if (!seated() && !rob.spot) { const s = robNear(p, .55); if (s) { h.held = { type: 'rob' }; robStart(s, h); haptic(h, .5, 60); return; } }   // Kasse/Automat ausrauben (Grip halten)
   let best = null, bd = .25;
   for (const t of TOOLS) { if (t.heldBy) continue; const d = t.obj.getWorldPosition(v1).distanceTo(p); if (d < bd) { bd = d; best = t; } }
@@ -3727,6 +3895,7 @@ function release(h) {
   if (x.type === 'tool') holster(x.t);
   if (x.type === 'door') x.d.grab = null;
   if (x.type === 'dash') dashRelease(h);
+  if (x.type === 'item') dropItem(x.it, h, handVel.get(h)?.v.clone());
   h.held = null;
 }
 
@@ -3765,7 +3934,7 @@ function vrInput(dt) {
     else if (phone.where === 'pocket') setPhone('hand');
     else if (phone.where === 'holder') {
       if (player.inCar || nearHolder(2.2)) { setPhone('hand'); phone.cool = time + 1.5; }
-      else msg('Dein Handy hängt noch im Auto am Magneten', 2.5);
+      else summonPhone();                                              // Handy liegt im Auto: fliegt zu deiner Hand
     }
     else setPhone('pocket');
   }
@@ -3835,7 +4004,10 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyE' && !seated() && !rob.spot) { const s = robNear(headWorld, 1.9); if (s) robStart(s, null); }   // E halten = ausrauben
   if (e.code === 'KeyB' && player.inCar) honk();                       // Hupe
   if (e.code === 'KeyT') startFuel();                                   // Tanken (an der Zapfsäule)
-  if (e.code === 'KeyN' && job.id === 'police' && player.inCar) setSiren(!job.siren);   // Sirene
+  if (e.code === 'KeyN' && canSiren() && player.inCar) setSiren(!job.siren);   // Sirene
+  if (e.code === 'KeyQ') deskItemToggle();                               // Essen/Trinken aufheben bzw. loslassen (Maustaste halten = essen/trinken)
+  if (e.code === 'KeyG' && vehicle.id === 'roadster' && player.inCar) jetOn();   // Raumflug (Tesla Roadster)
+  if (e.code === 'KeyM' && vehicle.emerg === 'fire' && player.inCar) setHose(!job.hose);   // Wasserwerfer (Feuerwehr)
   if (e.code === 'Digit1' || e.code === 'Digit2' || e.code === 'Digit3') {
     const t = TOOLS[+e.code.slice(5) - 1]; if (desk.tool) holster(desk.tool);
     desk.tool = desk.tool === t ? null : t;
@@ -3852,7 +4024,7 @@ addEventListener('keydown', e => {
     }
   }
   if (e.code === 'KeyP') {
-    if (phone.where === 'holder' && !player.inCar && !nearHolder(3)) msg('Dein Handy hängt noch im Auto am Magneten', 2.5);
+    if (phone.where === 'holder' && !player.inCar && !nearHolder(3)) summonPhone();
     else if (phone.where !== 'hand') { setPhone('hand'); document.exitPointerLock(); } else { setPhone('pocket'); lockMouse(); }
   }
   if (e.code === 'KeyH' && player.inCar) setPhone(phone.where === 'holder' ? 'hand' : 'holder');
@@ -4482,7 +4654,7 @@ function tornadoHit(c) {
 }
 // aus dem Auto geschleudert: du fliegst und überschlägst dich
 function ejectPlayer(vel) {
-  if (player.inCar) { player.inCar = false; for (const h of hands) if (h.held?.type === 'wheel') h.held = null; }
+  if (player.inCar) { player.inCar = false; jetOff(true); for (const h of hands) if (h.held?.type === 'wheel') h.held = null; }
   if (player.ride) player.ride = null;
   player.fly = { phase: 'eject', t: 0, vel, spin: (Math.random() < .5 ? -1 : 1) * rand(5, 7.5), rot: 0, roll: rand(-.6, .6), yaw: dolly.rotation.y };
   msg('Du wirst aus dem Auto geschleudert!', 2.5); hands.forEach(h => haptic(h, 1, 300)); playAt(SND.glass, headWorld, 1.2, 4);
@@ -4643,10 +4815,360 @@ function updMaint(dt) {
 }
 
 // ===================================================================
+// Hunger + Durst · Ware im Shop zum Greifen · Bezahlen mit dem Handy am NFC-Terminal
+//  - zwei Balken (Hunger, Durst) unten links im Blickfeld und auf dem Handy; sie sinken langsam
+//  - Essen an den Mund halten = essen; Flasche kippen (Mund unten) = trinken, sonst läuft das Wasser auf den Boden
+//  - Ware aufs Band legen -> Terminal zeigt Summe + Kontostand -> Handy rausholen und ans NFC-Feld halten
+// ===================================================================
+const fmtEur = x => x.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
+const NEED_FULL_S = { hunger: 1500, thirst: 1100 };                       // Sekunden von satt bis leer
+const [needC, needG] = C(256, 96), needTex = T(needC, false);
+const needHud = new THREE.Mesh(new THREE.PlaneGeometry(.2, .075), new THREE.MeshBasicMaterial({ map: needTex, transparent: true, depthTest: false, toneMapped: false }));
+needHud.renderOrder = 995; needHud.position.set(-.3, -.205, -.7); needHud.layers.set(OVERLAY); camera.add(needHud);
+function needIcon(g, kind, x, y) {
+  g.save(); g.translate(x, y);
+  if (kind === 'food') { g.fillStyle = '#e0a458'; g.beginPath(); g.ellipse(0, -3, 12, 8, 0, Math.PI, 0); g.fill(); g.fillStyle = '#6d3b1d'; g.fillRect(-12, -2, 24, 4); g.fillStyle = '#7cb342'; g.fillRect(-12, 2, 24, 3); g.fillStyle = '#e0a458'; g.beginPath(); g.ellipse(0, 6, 12, 4, 0, 0, Math.PI); g.fill(); }
+  else { g.fillStyle = '#4fc3f7'; g.beginPath(); g.moveTo(0, -13); g.quadraticCurveTo(13, 4, 0, 12); g.quadraticCurveTo(-13, 4, 0, -13); g.fill(); g.fillStyle = 'rgba(255,255,255,.55)'; g.beginPath(); g.ellipse(-4, 3, 2.5, 4.5, .4, 0, 7); g.fill(); }
+  g.restore();
+}
+function needBar(g, x, y, w, v, kind) {
+  const low = v < .2, blink = low && Math.floor(time * 3) % 2;
+  rr(g, x, y, w, 16, 8, 'rgba(255,255,255,.16)');
+  if (v > .01) rr(g, x, y, Math.max(14, w * v), 16, 8, low ? (blink ? '#ff5252' : '#c62828') : kind === 'food' ? '#ffb300' : '#29b6f6');
+}
+let needKey = '';
+function drawNeeds() {
+  const h = save.hunger, t = save.thirst, key = Math.round(h * 100) + ',' + Math.round(t * 100) + ((h < .2 || t < .2) ? (Math.floor(time * 3) % 2 ? 'b' : 'a') : '');
+  if (key === needKey) return; needKey = key;
+  needG.clearRect(0, 0, 256, 96); rr(needG, 0, 0, 256, 96, 22, 'rgba(10,12,16,.55)');
+  needIcon(needG, 'food', 28, 28); needBar(needG, 54, 20, 184, h, 'food');
+  needIcon(needG, 'drink', 28, 68); needBar(needG, 54, 60, 184, t, 'drink');
+  needTex.needsUpdate = true;
+}
+let starveT = 0, needWarn = { h: 0, t: 0 };
+function updNeeds(dt) {
+  needHud.visible = !player.dead && !maint.on;
+  if (player.dead) return;
+  const run = !seated() && Math.hypot(headWorld.x - (needHud.px ?? headWorld.x), headWorld.z - (needHud.pz ?? headWorld.z)) / Math.max(dt, .001) > 4 ? 1.5 : 1;   // rennen: schneller durstig
+  needHud.px = headWorld.x; needHud.pz = headWorld.z;
+  save.hunger = Math.max(0, save.hunger - dt / NEED_FULL_S.hunger); save.thirst = Math.max(0, save.thirst - dt / NEED_FULL_S.thirst * run);
+  if (save.hunger < .25 && time > needWarn.h) { needWarn.h = time + 90; msg('Du hast Hunger – im Supermarkt oder an der Tankstelle gibt es Essen', 4); uiTone(SND.ding); }
+  if (save.thirst < .25 && time > needWarn.t) { needWarn.t = time + 90; msg('Du hast Durst – im Shop gibt es Getränke', 4); uiTone(SND.ding); }
+  if (save.hunger <= 0 || save.thirst <= 0) { starveT += dt; if (starveT > 4) { starveT = 0; player.hp = Math.max(8, player.hp - 3); lastHurt = time; hurt = Math.max(hurt, .5); msg(save.thirst <= 0 ? 'Du verdurstest …' : 'Du verhungerst …', 2); } } else starveT = 0;
+  drawNeeds();
+}
+
+// ---------- Ware (kleine Modelle mit Vertexfarben, je eins ein Draw-Call) ----------
+const SHOP_ITEMS = {
+  water:    { name: 'Wasser',    price: 1.2, kind: 'drink', fill: .45 },
+  cola:     { name: 'Cola',      price: 1.8, kind: 'drink', fill: .32 },
+  saft:     { name: 'Apfelsaft', price: 2.2, kind: 'drink', fill: .38 },
+  burger:   { name: 'Burger',    price: 4.5, kind: 'food', fill: .45 },
+  sandwich: { name: 'Sandwich',  price: 3.2, kind: 'food', fill: .35 },
+  apple:    { name: 'Apfel',     price: .8,  kind: 'food', fill: .12 },
+  banana:   { name: 'Banane',    price: .6,  kind: 'food', fill: .14 },
+  chips:    { name: 'Chips',     price: 2.5, kind: 'food', fill: .22 },
+};
+const itemMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .5, metalness: .12 });
+const iPart = (g, hex, x = 0, y = 0, z = 0) => {
+  g.translate(x, y, z); const n = g.attributes.position.count, c = new THREE.Color(hex), a = new Float32Array(n * 3); for (let i = 0; i < n; i++) c.toArray(a, i * 3);
+  g.setAttribute('color', new THREE.BufferAttribute(a, 3)); const o = g.index ? g.toNonIndexed() : g; o.deleteAttribute('uv'); return o;
+};
+const ICYL = (r0, r1, h, seg = 14) => new THREE.CylinderGeometry(r0, r1, h, seg);
+const bottle = (body, cap, label) => [iPart(ICYL(.033, .033, .15), body, 0, -.03, 0), iPart(ICYL(.016, .033, .035), body, 0, .0625, 0), iPart(ICYL(.015, .015, .02), body, 0, .09, 0), iPart(ICYL(.0175, .0175, .022), cap, 0, .11, 0), iPart(ICYL(.0345, .0345, .06), label, 0, -.03, 0), iPart(ICYL(.0349, .0349, .012), cap, 0, -.03, 0)];
+const ITEM_BUILD = {
+  water: () => bottle(0xcfe9f8, 0x1e88e5, 0xffffff),
+  saft: () => bottle(0xf2b134, 0x2e7d32, 0xfff4d6),
+  cola: () => [iPart(ICYL(.033, .033, .115), 0xc62828, 0, 0, 0), iPart(ICYL(.0335, .0335, .03), 0xffffff, 0, 0, 0), iPart(ICYL(.03, .033, .006), 0xcfd8dc, 0, .0605, 0), iPart(ICYL(.033, .03, .006), 0xcfd8dc, 0, -.0605, 0)],
+  burger: () => [iPart(ICYL(.046, .044, .02, 18), 0xdba35a, 0, -.03, 0), iPart(ICYL(.048, .048, .015, 18), 0x5b3a1e, 0, -.0125, 0), iPart(new THREE.BoxGeometry(.1, .004, .1).rotateY(.78), 0xffd54f, 0, -.003, 0), iPart(ICYL(.053, .053, .008, 18), 0x7cb342, 0, .003, 0), iPart(ICYL(.042, .042, .008, 18), 0xd32f2f, 0, .011, 0), iPart(new THREE.SphereGeometry(.05, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2).scale(1, .72, 1), 0xe3a857, 0, .015, 0)],
+  sandwich: () => [iPart(ICYL(.075, .075, .03, 3).rotateY(Math.PI / 6), 0xe6c27a, 0, -.02, 0), iPart(ICYL(.072, .072, .012, 3).rotateY(Math.PI / 6), 0xef9a9a, 0, -.0, 0), iPart(ICYL(.07, .07, .008, 3).rotateY(Math.PI / 6), 0x7cb342, 0, .008, 0), iPart(ICYL(.075, .075, .03, 3).rotateY(Math.PI / 6), 0xe6c27a, 0, .026, 0)],
+  apple: () => [iPart(new THREE.SphereGeometry(.038, 14, 10).scale(1, .92, 1), 0xd32f2f), iPart(ICYL(.003, .003, .02, 5), 0x5d4037, 0, .04, 0), iPart(new THREE.SphereGeometry(.012, 6, 4).scale(1.8, .3, 1), 0x43a047, .012, .05, 0)],
+  banana: () => [iPart(new THREE.TorusGeometry(.07, .014, 8, 16, 2.1).rotateZ(Math.PI / 2 - 1.05), 0xfdd835, 0, -.035, 0), iPart(new THREE.SphereGeometry(.012, 6, 5), 0x5d4037, -.06, .0, 0), iPart(new THREE.SphereGeometry(.012, 6, 5), 0x5d4037, .06, .0, 0)],
+  chips: () => [iPart(new THREE.BoxGeometry(.1, .15, .03), 0xc62828), iPart(new THREE.BoxGeometry(.101, .05, .031), 0xffd54f, 0, -.01, 0), iPart(new THREE.BoxGeometry(.1, .012, .04), 0x8e1b1b, 0, .081, 0), iPart(new THREE.BoxGeometry(.1, .012, .04), 0x8e1b1b, 0, -.081, 0)],
+};
+const itemGeoCache = {};
+function itemGeo(type) {
+  if (itemGeoCache[type]) return itemGeoCache[type];
+  const g = mergeGeometries(ITEM_BUILD[type]()); g.computeBoundingBox(); g.userData.bot = -g.boundingBox.min.y; g.userData.top = g.boundingBox.max.y;
+  return itemGeoCache[type] = g;
+}
+const shopItems = [];
+let heldDesk = null;                                                       // Ware in der Hand (PC)
+function makeItem(type, pos, paid = false, slot = null) {
+  const geo = itemGeo(type), mesh = new THREE.Mesh(geo, itemMat); mesh.castShadow = false; scene.add(mesh); mesh.position.copy(pos);
+  const it = { type, def: SHOP_ITEMS[type], mesh, v: V(), held: null, paid, stolen: false, rest: true, lane: null, amt: 1, eatT: 0, bot: geo.userData.bot, slot, pourT: 0, sndT: 0, shop: null };
+  mesh.userData.item = it; shopItems.push(it); if (slot) slot.item = it; return it;
+}
+function removeItem(it) {
+  if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
+  if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
+  it.mesh.parent?.remove(it.mesh); const i = shopItems.indexOf(it); if (i >= 0) shopItems.splice(i, 1);
+  for (const h of hands) if (h.held?.it === it) h.held = null;
+  if (heldDesk === it) heldDesk = null;
+}
+function initShop() {
+  for (const s of shopStands) {
+    const it = makeItem(s.type, V(s.x, s.y + 1, s.z), false, s); it.mesh.position.y = s.y + it.bot; it.mesh.rotation.y = rand(0, Math.PI * 2); s.shop = interiors.find(I => I.hollow?.containsPoint(V(s.x, s.y + .3, s.z))) || null; it.I = s.shop;
+  }
+}
+const floorAt = (x, z) => { for (const I of interiors) if (I.hollow && x > I.hollow.min.x && x < I.hollow.max.x && z > I.hollow.min.z && z < I.hollow.max.z) return I.y0; return surfaceAt(x, z); };
+function supportY(x, y, z) {
+  let top = floorAt(x, z);
+  for (const s of shopSurf) if (x > s.minX && x < s.maxX && z > s.minZ && z < s.maxZ && s.y <= y + .08 && s.y > top) top = s.y;
+  return top;
+}
+SND.crunch = mkBuf(.26, (t, r) => r * (Math.sin(2 * Math.PI * 70 * t) > -.2 ? 1 : .25) * Math.exp(-t * 26) * .8 + (t > .09 ? r * Math.exp(-(t - .09) * 40) * .6 : 0));
+SND.gulp = mkBuf(.34, t => Math.sin(2 * Math.PI * (210 - 330 * t) * t) * Math.exp(-t * 7) * .5);
+SND.scan = mkBuf(.14, t => Math.sin(2 * Math.PI * 1900 * t) * (t < .11 ? 1 : 0) * .3);
+SND.nfc = mkBuf(.45, t => (t < .16 ? Math.sin(2 * Math.PI * 1320 * t) : t > .2 && t < .38 ? Math.sin(2 * Math.PI * 1760 * t) : 0) * .35);
+SND.thump = mkBuf(.12, (t, r) => (Math.sin(2 * Math.PI * 130 * t) * .7 + r * .3) * Math.exp(-t * 40) * .5);
+const dropFx = new PSys(260, .05, false, true, true); dropFx.tint = [.55, .8, 1];
+
+// ---------- Ware greifen / loslassen ----------
+const nearestItem = (p, r) => { let best = null, bd = r; for (const it of shopItems) { if (it.held) continue; const d = it.mesh.getWorldPosition(v1).distanceTo(p); if (d < bd) { bd = d; best = it; } } return best; };
+function holdItem(it, h) {
+  if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
+  if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
+  h.ctrl.add(it.mesh); it.mesh.position.set(0, -.012, -.075); it.mesh.rotation.set(0, 0, 0); it.mesh.scale.setScalar(1 - Math.min(.7, it.eatT / 2.6 * .75));
+  it.held = h; it.rest = false; it.v.set(0, 0, 0); h.held = { type: 'item', it }; haptic(h, .25, 40); playAt(SND.thump, it.mesh.getWorldPosition(v1), .3, 2);
+  tagItem = it; tagUntil = time + 2;
+}
+function dropItem(it, h, vel) {
+  const w = it.mesh.getWorldPosition(V()); scene.add(it.mesh); it.mesh.position.copy(w); it.mesh.quaternion.copy(it.mesh.getWorldQuaternion(_tq));
+  it.held = null; it.rest = false; if (vel) it.v.copy(vel); else it.v.set(0, 0, 0);
+}
+const handVel = new Map();
+function updHandVel(dt) {
+  for (const h of hands) {
+    const p = h.ctrl.getWorldPosition(V()), o = handVel.get(h) || { p: p.clone(), v: V() };
+    o.v.lerp(p.clone().sub(o.p).divideScalar(Math.max(dt, .001)), .35); o.p.copy(p); handVel.set(h, o);
+  }
+}
+
+// ---------- Preis-Schild an der Ware in der Nähe deiner Hand ----------
+const [tagC, tagG] = C(256, 72), tagTex = T(tagC, false);
+const tagSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: tagTex, transparent: true, depthTest: false, toneMapped: false })); tagSpr.scale.set(.2, .056, 1); tagSpr.renderOrder = 990; tagSpr.visible = false; scene.add(tagSpr);
+let tagItem = null, tagUntil = 0, tagKey = '';
+function showTag(it) {
+  const key = it.type + it.paid + it.stolen + Math.round(it.amt * 10) + Math.round(it.eatT * 3);
+  if (key !== tagKey) {
+    tagKey = key; tagG.clearRect(0, 0, 256, 72); rr(tagG, 0, 0, 256, 72, 18, 'rgba(10,12,16,.82)');
+    tx(tagG, it.def.name, 16, 24, 26, '#fff', 'left', 800);
+    const st = it.paid ? 'bezahlt' : it.stolen ? 'geklaut' : fmtEur(it.def.price);
+    tx(tagG, st, 240, 24, 26, it.paid ? '#69f0ae' : it.stolen ? '#ff8a80' : '#ffd54f', 'right', 800);
+    tx(tagG, it.def.kind === 'drink' ? 'Flasche kippen = trinken' : 'an den Mund = essen', 16, 54, 17, '#9fb3c8', 'left', 600);
+    tagTex.needsUpdate = true;
+  }
+  tagSpr.position.copy(it.mesh.getWorldPosition(v3)).y += .11; tagSpr.visible = true;
+  const k = clamp(tagSpr.position.distanceTo(headWorld) / .9, .5, 1.2); tagSpr.scale.set(.2 * k, .056 * k, 1);    // nah an der Kamera kleiner, damit es nicht das Bild füllt
+}
+
+// ---------- Terminal-Anzeige an der Kasse ----------
+function drawLane(L) {
+  const g = L.g, W = 256, H = 192;
+  g.fillStyle = '#0b1220'; g.fillRect(0, 0, W, H);
+  const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, '#1b5e20'); gr.addColorStop(1, '#2e7d32'); g.fillStyle = gr; g.fillRect(0, 0, W, 32);
+  tx(g, L.name, 10, 17, 17, '#fff', 'left', 800); tx(g, 'KASSE', W - 10, 17, 13, '#c8e6c9', 'right', 700);
+  const n = L.items.length;
+  if (time - L.paidT < 3.5) {
+    g.beginPath(); g.arc(W / 2, 74, 32, 0, 7); g.fillStyle = '#2e7d32'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 8; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(W / 2 - 15, 75); g.lineTo(W / 2 - 4, 87); g.lineTo(W / 2 + 17, 61); g.stroke();
+    tx(g, 'Bezahlt – danke!', W / 2, 126, 21, '#a5d6a7', 'center', 800);
+  } else if (!n) {
+    tx(g, 'Ware aufs Band legen', W / 2, 78, 19, '#9db3c8', 'center', 700); tx(g, 'Hunger und Durst stillen:', W / 2, 108, 14, '#6f8499', 'center', 500); tx(g, 'Essen + Getränke vom Tisch', W / 2, 126, 14, '#6f8499', 'center', 500);
+  } else {
+    L.items.slice(0, 4).forEach((it, i) => { tx(g, it.def.name, 12, 50 + i * 21, 17, '#e3eaf2', 'left', 600); tx(g, fmtEur(it.def.price), W - 12, 50 + i * 21, 17, '#e3eaf2', 'right', 600); });
+    if (n > 4) tx(g, '+ ' + (n - 4) + ' weitere', 12, 50 + 4 * 21, 14, '#8aa0b5', 'left', 500);
+    g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(10, 104, W - 20, 2);
+    tx(g, 'SUMME', 12, 124, 15, '#9db3c8', 'left', 700); tx(g, fmtEur(L.total), W - 12, 124, 30, '#fff', 'right', 800);
+  }
+  rr(g, 8, 146, W - 16, 40, 10, 'rgba(255,255,255,.08)');
+  tx(g, 'Dein Konto', 18, 160, 13, '#9db3c8', 'left', 600); tx(g, fmtEur(money), W - 18, 160, 19, '#ffd54f', 'right', 800);
+  tx(g, n && time - L.paidT >= 3.5 ? 'Handy ans NFC-Feld halten' : ' ', W / 2, 178, 13, '#4dd0e1', 'center', 700);
+  L.tex.needsUpdate = true; L.moneyShown = Math.round(money * 100);
+}
+
+// ---------- Ware: Fallen, Liegenbleiben, Kassenband, Essen, Trinken ----------
+const mouthPos = () => camera.localToWorld(V(0, -.105, -.075));
+function updItem(it, dt) {
+  if (it.held || it.rest) return;
+  const m = it.mesh; it.v.y -= 9.8 * dt; m.position.addScaledVector(it.v, dt);
+  const sy = supportY(m.position.x, m.position.y + it.bot - .01, m.position.z) + it.bot;
+  if (m.position.y <= sy) {
+    m.position.y = sy;
+    if (it.v.y < -1.3) { playAt(SND.thump, m.position, Math.min(.8, -it.v.y * .1), 2); it.v.y *= -.28; it.v.x *= .6; it.v.z *= .6; }
+    else { it.v.set(0, 0, 0); it.rest = true; settleItem(it); }
+  }
+}
+function settleItem(it) {
+  const m = it.mesh, e = new THREE.Euler().setFromQuaternion(m.quaternion, 'YXZ'); m.rotation.set(0, e.y, 0);
+  if (it.paid) return;
+  for (const I of interiors) for (const L of I.lanes || []) {                // aufs Kassenband gelegt -> wird gescannt
+    const z = L.zone, p = m.position;
+    if (p.x > z.minX && p.x < z.maxX && p.z > z.minZ && p.z < z.maxZ && Math.abs(p.y - it.bot - z.y) < .06 && !L.items.includes(it)) { it.lane = L; L.items.push(it); L.dirty = true; playAt(SND.scan, p, .5, 3); }
+  }
+}
+function finishItem(it) { msg(it.def.kind === 'drink' ? 'Flasche leer' : 'Aufgegessen – lecker!', 1.8); removeItem(it); }
+function useItem(it, dt, mouth) {
+  const d = it.def, m = it.mesh, c = m.getWorldPosition(V()), ok = it.paid || it.stolen;
+  if (d.kind === 'food') {
+    if (c.distanceTo(mouth) >= .14) return;
+    if (!ok) { if (time > it.sndT) { it.sndT = time + 2.5; msg('Erst bezahlen! (' + fmtEur(d.price) + ')', 2); haptic(it.held, .5, 80); } return; }
+    it.eatT += dt; m.scale.setScalar(1 - Math.min(.72, it.eatT / 2.6 * .75));
+    save.hunger = Math.min(1, save.hunger + d.fill / 2.6 * dt);
+    if (time > it.sndT) { it.sndT = time + .42; playAt(SND.crunch, mouth, .5, 1.5); haptic(it.held, .3, 40); }
+    if (it.eatT >= 2.6) finishItem(it);
+  } else {
+    const up = V(0, 1, 0).applyQuaternion(m.getWorldQuaternion(_tq)), tilt = Math.acos(clamp(up.y, -1, 1));
+    if (tilt <= 1.3 || it.amt <= 0) return;
+    if (!ok) { if (time > it.sndT) { it.sndT = time + 2.5; msg('Erst bezahlen! (' + fmtEur(d.price) + ')', 2); haptic(it.held, .5, 80); } return; }
+    const open = m.localToWorld(V(0, itemGeo(it.type).userData.top, 0)), flow = dt * .11 * Math.min(1, (tilt - 1.3) / .6 + .35);
+    it.amt = Math.max(0, it.amt - flow);
+    if (open.distanceTo(mouth) < .11) {                                    // Flaschenöffnung am Mund: du trinkst
+      save.thirst = Math.min(1, save.thirst + d.fill * flow);
+      if (time > it.sndT) { it.sndT = time + .5; playAt(SND.gulp, mouth, .5, 1.5); haptic(it.held, .2, 30); }
+    } else {                                                               // sonst läuft das Wasser auf den Boden
+      for (let i = 0; i < 3; i++) dropFx.spawn(open.x, open.y, open.z, up.x * .7 + rand(-.12, .12), up.y * .7 + rand(-.1, .1), up.z * .7 + rand(-.12, .12), rand(.5, .9));
+      if (time > it.sndT) { it.sndT = time + .22; playAt(SND.splash, open, .12, 2); }
+    }
+    if (it.amt <= .01) finishItem(it);
+  }
+}
+// PC: Ware in der Hand liegt unten rechts im Bild; Maustaste halten = an den Mund / Flasche kippen
+function deskItemPose(dt) {
+  const it = heldDesk, m = it.mesh, use = desk.mouse, drink = it.def.kind === 'drink';
+  const tp = use ? (drink ? V(0, -.055, -.185) : V(0, -.1, -.1)) : V(.17, -.17, -.4), tr = use && drink ? 2.0 : 0, k = Math.min(1, dt * 9);
+  m.position.lerp(tp, k); m.rotation.x += (tr - m.rotation.x) * k; m.rotation.y *= 1 - k; m.rotation.z *= 1 - k;
+}
+function deskItemToggle() {
+  if (heldDesk) { const it = heldDesk; heldDesk = null; const w = it.mesh.getWorldPosition(V()), q = it.mesh.getWorldQuaternion(new THREE.Quaternion()); scene.add(it.mesh); it.mesh.position.copy(w); it.mesh.quaternion.copy(q); it.held = null; it.rest = false; camera.getWorldDirection(v1); it.v.copy(v1).multiplyScalar(1.4); return; }
+  camera.getWorldDirection(v1); let best = null, bd = .93;
+  for (const it of shopItems) { if (it.held) continue; const d = v2.copy(it.mesh.getWorldPosition(v3)).sub(headWorld); const L = d.length(); if (L > 2.5) continue; const dot = d.divideScalar(L).dot(v1); if (dot > bd) { bd = dot; best = it; } }
+  if (!best) return;
+  const it = best; if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
+  if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
+  camera.add(it.mesh); it.mesh.position.set(.17, -.17, -.4); it.mesh.rotation.set(0, 0, 0); it.mesh.scale.setScalar(1 - Math.min(.72, it.eatT / 2.6 * .75)); it.held = 'desk'; it.rest = false; heldDesk = it; tagItem = it; tagUntil = time + 2;
+  playAt(SND.thump, headWorld, .3, 2);
+}
+// Anzeige an den Kassen + Ring um das NFC-Feld
+function updLanes(dt) {
+  for (const I of interiors) for (const L of I.lanes || []) {
+    if (!L.pad) continue;
+    L.nearD = L.pad.distanceTo(headWorld);
+    let total = 0; for (const it of L.items) total += it.def.price; total = Math.round(total * 100) / 100;
+    if (total !== L.total) { L.total = total; L.dirty = true; }
+    if (L.nearD < 6) { L.redraw = (L.redraw || 0) - dt; if (L.dirty || L.redraw <= 0 || Math.round(money * 100) !== L.moneyShown) { drawLane(L); L.dirty = false; L.redraw = .5; } }
+    L.ring.material.opacity = L.total > 0 && phone.where === 'hand' && L.nearD < 1.7 ? .35 + .35 * Math.sin(time * 6) : 0;
+  }
+}
+// ---------- Bezahlen: Handy ans NFC-Feld halten ----------
+let payCool = 0, payHint = 0;
+function nfcNear(L) {
+  if (xrOn()) return phoneG.getWorldPosition(v1).distanceTo(L.pad) < .13;
+  camera.getWorldDirection(v2); v1.copy(L.pad).sub(headWorld); const d = v1.length();
+  return d < 1.3 && v2.dot(v1.normalize()) > .88;
+}
+function doPay(P) {
+  const L = P.L, total = Math.round(L.total * 100) / 100;
+  if (money + 1e-6 < total) { P.state = 'fail'; P.t1 = time; haptic(handBy('left'), .9, 220); uiTone(SND.warn); return; }
+  P.bal0 = money; money -= total; P.bal1 = money; P.state = 'ok'; P.t1 = time; L.paidT = time; L.dirty = true;
+  for (const it of L.items) it.paid = true; L.items = []; L.total = 0;
+  save.st.shop = (save.st.shop || 0) + 1; addTx('Einkauf – ' + L.name, -total); writeSave();
+  uiTone(SND.nfc); haptic(handBy('left'), .7, 140); playAt(SND.scan, L.pad, .6, 3);
+}
+function updPay(dt) {
+  let P = phone.pay; const handOut = phone.where === 'hand' && phoneG.visible;
+  let best = null;
+  for (const I of interiors) for (const L of I.lanes || []) if (L.total > 0 && L.nearD < 3 && (!best || L.nearD < best.nearD)) best = L;
+  if (!P) {
+    if (best && handOut && time > payCool) { phone.pay = { L: best, state: 'wait', t0: time, total: best.total, near: 0, leave: 0, bal0: money, bal1: money, t1: 0 }; phone.drawT = 0; uiTone(SND.ding); }
+    else if (best && !handOut && time > payHint) { payHint = time + 9; msg('Zum Bezahlen: Handy rausholen (' + (xrOn() ? 'A' : 'P') + ') und ans NFC-Feld halten', 4); }
+    return;
+  }
+  phone.drawT = Math.min(phone.drawT, .03);
+  if (P.leave) { if (time - P.leave > .5) { phone.pay = null; payCool = time + 1.2; phone.drawT = 0; } return; }
+  if (P.state === 'wait') {
+    if (!handOut || !best || best !== P.L) { P.leave = time; return; }
+    P.total = P.L.total;
+    if (nfcNear(P.L)) { P.near += dt; if (P.near > .45) doPay(P); } else P.near = Math.max(0, P.near - dt * 2);
+  } else if (time - P.t1 > 1.6) P.leave = time;
+}
+// Liquid-Glass-Fenster oben auf dem Handy: wächst aus einer kleinen Kapsel, links Kontostand, rechts NFC-Animation -> Haken -> verschwindet
+const eob = u => 1 + 2.70158 * Math.pow(u - 1, 3) + 1.70158 * Math.pow(u - 1, 2);
+function drawPayPopup(g) {
+  const P = phone.pay; if (!P) return;
+  const t = time - P.t0, lv = P.leave ? ease(clamp((time - P.leave) / .45, 0, 1)) : 0, kk = Math.max(0, eob(clamp(t / .6, 0, 1))) * (1 - lv);
+  if (kk <= .01) return;
+  const lerp = (a, b, k) => a + (b - a) * k;
+  const x = lerp(PW / 2 - 46, 12, kk), y = lerp(13, 44, kk), w = lerp(92, PW - 24, kk), h = lerp(30, 118, kk), r = Math.min(h / 2, lerp(15, 38, kk));
+  g.save(); g.shadowColor = 'rgba(0,0,0,.5)'; g.shadowBlur = 26 * kk; g.shadowOffsetY = 9 * kk; g.fillStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.roundRect(x, y, w, h, r); g.fill(); g.restore();
+  g.save(); g.beginPath(); g.roundRect(x, y, w, h, r); g.clip();
+  g.filter = 'blur(9px) saturate(1.8) brightness(1.2)'; g.drawImage(appCan, 0, 0); g.filter = 'none';
+  const tint = P.state === 'ok' ? '52,199,89' : P.state === 'fail' ? '255,69,58' : '255,255,255';
+  const gr = g.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, `rgba(${tint},.32)`); gr.addColorStop(.55, `rgba(${tint},.1)`); gr.addColorStop(1, `rgba(${tint},.22)`); g.fillStyle = gr; g.fillRect(x, y, w, h);
+  const gx = x + (.5 + .5 * Math.sin(time * 1.4)) * w, rg = g.createRadialGradient(gx, y + h * .12, 0, gx, y + h * .12, w * .5); rg.addColorStop(0, 'rgba(255,255,255,.38)'); rg.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = rg; g.fillRect(x, y, w, h);
+  g.restore();
+  g.save(); g.beginPath(); g.roundRect(x + .8, y + .8, w - 1.6, h - 1.6, r); const eg = g.createLinearGradient(x, y, x + w, y + h);
+  eg.addColorStop(0, 'rgba(255,255,255,.95)'); eg.addColorStop(.35, 'rgba(255,255,255,.35)'); eg.addColorStop(.7, 'rgba(255,255,255,.1)'); eg.addColorStop(1, 'rgba(255,255,255,.6)'); g.strokeStyle = eg; g.lineWidth = 1.8; g.stroke();
+  g.beginPath(); g.roundRect(x + 4, y + 4, w - 8, h - 8, Math.max(2, r - 4)); g.strokeStyle = 'rgba(255,255,255,.13)'; g.lineWidth = 1; g.stroke(); g.restore();
+  const a = clamp((kk - .72) / .28, 0, 1); if (a <= 0) return;
+  g.save(); g.globalAlpha = a;
+  const bal = P.state === 'ok' ? lerp(P.bal0, P.bal1, ease(clamp((time - P.t1) / .8, 0, 1))) : money;
+  tx(g, 'Kontostand', x + 22, y + 27, 13, 'rgba(255,255,255,.78)', 'left', 600);
+  tx(g, fmtEur(bal), x + 22, y + 56, 27, '#fff', 'left', 800);
+  tx(g, P.state === 'fail' ? 'Zu wenig Guthaben' : P.state === 'ok' ? 'Bezahlt · ' + fmtEur(P.total) : 'Zu zahlen ' + fmtEur(P.total), x + 22, y + 90, 14, P.state === 'fail' ? '#ffd0cc' : P.state === 'ok' ? '#d6ffe0' : 'rgba(255,255,255,.9)', 'left', 700);
+  const cx = x + w - 60, cy = y + h / 2;
+  if (P.state === 'wait') {
+    const ph = (time * .85) % 1;                                             // Handy nähert sich dem Lesegerät
+    rr(g, cx + 14, cy - 24, 16, 48, 6, 'rgba(255,255,255,.85)'); rr(g, cx + 18, cy - 18, 8, 12, 3, 'rgba(0,131,143,.9)');
+    for (let i = 0; i < 3; i++) { const q = (ph + i / 3) % 1; g.beginPath(); g.arc(cx + 14, cy, 8 + q * 22, -.9, .9); g.strokeStyle = `rgba(255,255,255,${.85 * (1 - q)})`; g.lineWidth = 3; g.lineCap = 'round'; g.stroke(); }
+    const px = cx - 44 + ph * 26; g.save(); g.translate(px, cy); g.rotate(-.1); g.beginPath(); g.roundRect(-11, -18, 22, 36, 5); g.fillStyle = 'rgba(30,34,44,.7)'; g.fill(); g.strokeStyle = 'rgba(255,255,255,.95)'; g.lineWidth = 2.4; g.stroke(); g.fillStyle = 'rgba(255,255,255,.9)'; g.beginPath(); g.arc(0, -12, 2, 0, 7); g.fill(); g.restore();
+    if (P.near > 0) { g.beginPath(); g.arc(cx, cy, 33, -Math.PI / 2, -Math.PI / 2 + P.near / .45 * Math.PI * 2); g.strokeStyle = '#4dd0e1'; g.lineWidth = 4; g.lineCap = 'round'; g.stroke(); }
+  } else {
+    const u = ease(clamp((time - P.t1) / .35, 0, 1)), ok = P.state === 'ok', col = ok ? 'rgba(52,199,89,.96)' : 'rgba(255,69,58,.96)';
+    g.beginPath(); g.arc(cx, cy, 30 * u, 0, 7); g.fillStyle = col; g.fill();
+    const v = ease(clamp((time - P.t1 - .18) / .38, 0, 1)); g.strokeStyle = '#fff'; g.lineWidth = 6; g.lineCap = 'round'; g.lineJoin = 'round';
+    g.beginPath(); if (ok) { g.moveTo(cx - 13, cy + 1); g.lineTo(cx - 4, cy + 11); g.lineTo(cx + 15, cy - 10); g.setLineDash([46, 46]); g.lineDashOffset = 46 * (1 - v); }
+    else { g.moveTo(cx - 11, cy - 11); g.lineTo(cx + 11, cy + 11); g.moveTo(cx + 11, cy - 11); g.lineTo(cx - 11, cy + 11); g.setLineDash([60, 60]); g.lineDashOffset = 60 * (1 - v); }
+    g.stroke(); g.setLineDash([]);
+  }
+  g.restore();
+}
+// Hauptschleife der Ware, Kasse und Bezahlung
+let shopVisT = 0;
+function updShop(dt) {
+  updHandVel(dt);
+  const mouth = mouthPos();
+  shopVisT -= dt;
+  if (shopVisT <= 0) {
+    shopVisT = .4;
+    for (const it of shopItems) it.mesh.visible = !!it.held || it.mesh.position.distanceToSquared(headWorld) < 55 * 55;
+    for (const it of shopItems.slice()) if (!it.held && !it.slot && it.mesh.position.distanceToSquared(headWorld) > 160 * 160) removeItem(it);       // liegengebliebene Ware weit weg verschwindet
+    for (const it of shopItems) if (!it.paid && !it.stolen && it.I) {            // mit unbezahlter Ware aus dem Laden: Ladendiebstahl
+      const p = it.mesh.getWorldPosition(v1), hb = it.I.hollow;
+      if (!(p.x > hb.min.x - .6 && p.x < hb.max.x + .6 && p.z > hb.min.z - .6 && p.z < hb.max.z + .6)) { it.stolen = true; addWanted(1, 'Ladendiebstahl'); msg('Ladendiebstahl! Die Polizei ist alarmiert', 3.5); playAt(SND.warn, p, 1, 6); }
+    }
+    for (const s of shopStands) if (!s.item) {                            // Regal füllt sich wieder auf
+      s.t += .4; if (s.t > 45 && s.shop && Math.hypot(s.x - headWorld.x, s.z - headWorld.z) > 3.5) { const it = makeItem(s.type, V(s.x, s.y + 1, s.z), false, s); it.mesh.position.y = s.y + it.bot; it.mesh.rotation.y = rand(0, 6.28); it.I = s.shop; }
+    }
+  }
+  for (const it of shopItems) updItem(it, dt);
+  for (const h of hands) if (h.held?.type === 'item') useItem(h.held.it, dt, mouth);
+  if (heldDesk) { deskItemPose(dt); useItem(heldDesk, dt, mouth); }
+  dropFx.update(dt, -9.8);
+  updLanes(dt); updPay(dt);
+  // Preis-Schild: an Ware in der Hand bzw. nahe der Hand
+  let target = null;
+  if (tagItem && time < tagUntil) target = tagItem;
+  for (const h of hands) { if (h.held?.type === 'item') target = h.held.it; else if (!target && xrOn()) { const n = nearestItem(h.ctrl.getWorldPosition(V()), .3); if (n) target = n; } }
+  if (heldDesk) target = heldDesk;
+  if (target && shopItems.includes(target)) showTag(target); else tagSpr.visible = false;
+}
+
+// ===================================================================
 // Speicherstand: Geld, Statistik, Haus, Hund, Tuning, Tank, Radio, Chat (localStorage) + Handy-Galerie (IndexedDB)
 // ===================================================================
 const SAVE_KEY = 'svr_save1';
-const save = { money: 0, st: { taxi: 0, deliv: 0, arrest: 0, rob: 0, busted: 0 }, house: -1, dog: false, tune: {}, fuel: 1, radio: 0, vol: .6, chat: [] };
+const save = { money: 0, st: { taxi: 0, deliv: 0, arrest: 0, rob: 0, busted: 0 }, house: -1, dog: false, tune: {}, fuel: 1, radio: 0, vol: .6, chat: [], hunger: 1, thirst: 1, own: {}, tx: [] };
 try { const s = JSON.parse(localStorage.getItem(SAVE_KEY) || 'null'); if (s) { Object.assign(save, s); save.st = { taxi: 0, deliv: 0, arrest: 0, rob: 0, busted: 0, ...(s.st || {}) }; } } catch (e) { }
 money = save.money || 0;
 let saveT = 3;
@@ -4962,7 +5484,7 @@ function updJob(dt) {
 // ---------- Polizist: Blaulicht, Sirene, Räuber jagen, gesuchte Spieler festnehmen ----------
 function policeBar(on) {
   if (!on) { if (pcar.pbar) { pcar.pbar.parent?.remove(pcar.pbar); pcar.pbar = null; } return; }
-  if (pcar.pbar || vehicle.type === 'scooter' || !pcar.chassis) return;
+  if (pcar.pbar || vehicle.type === 'scooter' || !pcar.chassis || vehicle.emerg) return;   // Einsatzfahrzeuge haben ihr Blaulicht schon
   const g = new THREE.Group(), l = new THREE.Mesh(BOX, copBlue), r = new THREE.Mesh(BOX, copDark);
   for (const [m, x] of [[l, -.25], [r, .25]]) { m.scale.set(.44, .1, .2); m.position.x = x; g.add(m); }
   g.position.set(0, pcar.half.y + .04, -.35); pcar.chassis.add(g); pcar.pbar = g; g.userData = { l, r };
@@ -5013,6 +5535,177 @@ function arrestTarget() {
 function doArrest(p) { netSig(p.id, { arrest: 1 }); msg('Festnahme: ' + p.name + ' …', 2); haptic(handBy('right'), .6, 80); }
 
 // ===================================================================
+// Einsatzfahrzeuge: Polizeiauto (Jetta im Polizei-Lack), Feuerwehr + Krankenwagen (eigene Modelle aus Grundformen).
+// Alle laufen durch dieselbe Auto-Pipeline wie die geladenen Modelle: echte Türen mit Griff, Räder, Lenkrad, Displays, Sitze.
+// Blaulicht + Sirene am Auto-Display, Feuerwehr hat einen Wasserwerfer (löscht Feuer).
+// ===================================================================
+const canSiren = () => job.id === 'police' || !!vehicle.emerg;
+function buildEmergency(kind) {
+  const S = new THREE.Group(), fire = kind === 'fire';
+  const mk = (name, color, o = {}) => { const m = new THREE.MeshStandardMaterial({ color, roughness: .5, metalness: .2, ...o }); m.name = name; return m; };
+  const paint = mk('paint_body', fire ? 0xc8141a : 0xf5f6f7, { metalness: .45, roughness: .32 });
+  const dark = mk('trim_dark', 0x16181b, { roughness: .6 }), alloy = mk('rim_alloy', 0xc9ced3, { metalness: .9, roughness: .25 }), rubber = mk('tire_rubber', 0x101010, { roughness: .9 });
+  const glass = mk('glass', 0x18202a, { metalness: .9, roughness: .05 }), seatM = mk('seat_leather', 0x2a2d33, { roughness: .8 }), floorM = mk('floor_carpet', 0x2b2d31, { roughness: 1 });
+  const dispM = mk('display_screen', 0x050608, { roughness: .2 }), chrome = mk('chrome_metal', 0xdadde0, { metalness: .9, roughness: .2 });
+  const lampH = mk('projector_head', 0xffffff, { emissive: 0xfff2dd, emissiveIntensity: .8 }), lampT = mk('taillight_red', 0x771111, { emissive: 0xff1010, emissiveIntensity: .4 }), amber = mk('lamp_amber', 0xff9a00, { emissive: 0xff8800, emissiveIntensity: .5 });
+  const sirenA = mk('siren_a', 0x0a1a66, { emissive: 0x1040ff, emissiveIntensity: .12 }), sirenB = mk('siren_b', 0x0a1a66, { emissive: 0x1040ff, emissiveIntensity: .12 });
+  const stripeR = mk('stripe_red', 0xd01818), stripeY = mk('stripe_yellow', fire ? 0xe8e8e8 : 0xe9d800), stripeG = mk('stripe_green', 0x2fb34a);
+  const put = (name, geo, m, x = 0, y = 0, z = 0) => { geo.translate(x, y, z); const me = new THREE.Mesh(geo, m); me.name = name; S.add(me); return me; };
+  const bx = (name, w, h, d, x, y, z, m, r = .03) => put(name, new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2.01, h / 2.01, d / 2.01)), m, x, y, z);
+  const slab = (name, w, h, d, x, y, z, m) => put(name, new THREE.BoxGeometry(w, h, d), m, x, y, z);
+  const prof = (name, pts, w, m, x = 0) => put(name, new THREE.ExtrudeGeometry(new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(z, y))), { depth: w, bevelEnabled: false }).translate(0, 0, -w / 2).rotateY(-Math.PI / 2), m, x);
+  const quad = (name, a, b, c, d, m) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute([...a, ...b, ...c, ...d], 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2)); g.setIndex([0, 1, 2, 0, 2, 3]); g.computeVertexNormals(); return put(name, g, m); };
+  const beam = (name, a, b, t, m) => { const d = new THREE.Vector3(b[0] - a[0], b[1] - a[1], b[2] - a[2]); const me = new THREE.Mesh(new THREE.BoxGeometry(t, t, d.length()), m); me.name = name; me.position.set((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2); me.lookAt(me.position.clone().add(d)); S.add(me); return me; };
+  const pane = (name, pts, x, m) => { const s = Math.sign(x), g = new THREE.ShapeGeometry(new THREE.Shape(pts.map(([z, y]) => new THREE.Vector2(s > 0 ? -z : z, y)))); g.rotateY(s > 0 ? Math.PI / 2 : -Math.PI / 2); return put(name, g, m, x); };
+  const wheel = (tag, x, z, r, wd) => { put('Tire_' + tag, new THREE.CylinderGeometry(r, r, wd, 28).rotateZ(Math.PI / 2), rubber, x, r, z); put('Rim_' + tag, new THREE.CylinderGeometry(r * .62, r * .62, wd + .02, 20).rotateZ(Math.PI / 2), alloy, x + Math.sign(x) * .005, r, z); };
+  const decal = (text, sub, w, h, bg, fg, border) => {
+    const [c, g] = C(512, Math.round(512 * h / w)); g.fillStyle = bg; g.fillRect(0, 0, 512, c.height); if (border) { g.strokeStyle = border; g.lineWidth = 8; g.strokeRect(4, 4, 504, c.height - 8); }
+    g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `800 ${Math.round(c.height * (sub ? .52 : .66))}px system-ui,sans-serif`; g.fillText(text, 256, c.height * (sub ? .4 : .52));
+    if (sub) { g.font = `700 ${Math.round(c.height * .22)}px system-ui,sans-serif`; g.fillText(sub, 256, c.height * .8); }
+    const m = new THREE.MeshBasicMaterial({ map: T(c, false), polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false }); m.name = 'decal_text'; return m;
+  };
+  const sideDecal = (name, m, w, h, x, y, z) => { for (const s of [1, -1]) { const g = new THREE.PlaneGeometry(w, h); g.rotateY(s * Math.PI / 2); put(name + (s > 0 ? '_L' : '_R'), g, m, s * x, y, z); } };
+  // Fahrerhaus: Boden, feste Seitenteile, Säulen, Dach, Windschutzscheibe, Armaturenbrett, Sitze, Lenkrad, 2 Displays, 2 Türen mit Fenster + Griff
+  const cab = P => {
+    const hw = P.W / 2, { zr, zf, zt, yfl, yb, yb0, yr, d0, d1 } = P;
+    slab('Floor_interior', P.W - .12, .08, zf - zr, 0, yfl, (zf + zr) / 2, floorM);
+    for (const s of [1, -1]) {
+      slab('Body_cabside_rear', .06, yb - yb0, d0 - zr, s * (hw - .02), (yb + yb0) / 2, (zr + d0) / 2, paint);
+      slab('Body_cabside_front', .06, yb - yb0, Math.max(.05, zf - d1 + .05), s * (hw - .02), (yb + yb0) / 2, (d1 + zf + .05) / 2, paint);
+      slab('Pillar_B', .06, yr - yb, d0 - zr, s * (hw - .02), (yb + yr) / 2, (zr + d0) / 2, dark);
+      beam('Pillar_A', [s * (hw - .04), yb, zf], [s * (hw - .04), yr - .02, zt], .08, dark);
+    }
+    slab('Roof_cab', P.W - .04, .07, zt - zr + .04, 0, yr, (zt + zr) / 2, paint);
+    quad('Windshield', [hw - .09, yb + .02, zf - .02], [-(hw - .09), yb + .02, zf - .02], [-(hw - .09), yr - .06, zt + .03], [hw - .09, yr - .06, zt + .03], glass);
+    bx('Dash_interior', P.W - .2, .24, .42, 0, yb - .14, zf - .2, dark, .05);
+    for (const sx of [1, -1]) {
+      bx('Seat_leather', .5, .12, .52, sx * P.seatX, yfl + .4, P.seatZ, seatM, .04); bx('Seat_leather_back', .5, .66, .12, sx * P.seatX, yfl + .78, P.seatZ - .27, seatM, .04); slab('Seat_leather_base', .3, .32, .3, sx * P.seatX, yfl + .2, P.seatZ, dark);
+    }
+    put('Steering_Wheel', new THREE.TorusGeometry(.19, .022, 10, 28).rotateX(.5), dark, P.steer[0], P.steer[1], P.steer[2]);
+    bx('Steering_column', .07, .07, .4, P.steer[0], P.steer[1] - .1, P.steer[2] + .2, dark, .02);
+    put('Display_main', new THREE.PlaneGeometry(.3, .17).rotateY(Math.PI), dispM, 0, yb + .03, zf - .2);
+    put('Display_cluster', new THREE.PlaneGeometry(.27, .1).rotateY(Math.PI), dispM, P.steer[0], P.steer[1] + .02, P.steer[2] + .24);
+    for (const [key, s] of [['FL', 1], ['FR', -1]]) {
+      bx('Door_' + key, .06, yb - yb0, d1 - d0, s * (hw - .005), (yb + yb0) / 2, (d0 + d1) / 2, paint, .02);
+      const yt = yr - .07, zfAt = y => zf + (zt - zf) * (y - yb) / (yr - yb);
+      pane('Door_' + key + '_Glass', [[d0 + .05, yb + .03], [d1 - .03, yb + .03], [Math.min(d1 - .03, zfAt(yt) - .06), yt], [d0 + .05, yt]], s * (hw - .03), glass);
+      bx('Door_' + key + '_handle', .04, .04, .17, s * (hw + .03), yb0 + (yb - yb0) * .6, d0 + .2, chrome, .012);
+      bx('Body_mirror_' + key, .1, .26, .18, s * (hw + .1), yb + .3, d1 - .02, dark, .03);
+    }
+  };
+  if (kind === 'ambulance') {
+    // 5,6 m lang, 2,0 m breit: Kastenaufbau hinten, Fahrerhaus vorne
+    prof('Body_hood', [[1.8, .55], [1.8, 1.5], [2.5, 1.22], [2.8, 1.0], [2.8, .55]], 1.98, paint);
+    bx('Body_box', 2.0, 1.9, 3.0, 0, 1.7, -1.3, paint, .08);
+    slab('Underbody', 1.8, .26, 5.5, 0, .52, 0, dark);
+    for (const s of [1, -1]) { slab('Stripe_red_' + s, .012, .26, 3.0, s * 1.003, 1.1, -1.3, stripeR); slab('Stripe_green_' + s, .012, .1, 3.0, s * 1.003, .92, -1.3, stripeG); }
+    slab('Stripe_red_rear', 2.01, .26, .02, 0, 1.1, -2.801, stripeR);
+    cab({ W: 2.0, zr: .2, zf: 1.8, zt: 1.4, yfl: .85, yb0: .6, yb: 1.5, yr: 2.5, d0: .5, d1: 1.68, seatX: .45, seatZ: .8, steer: [.45, 1.65, 1.28] });
+    sideDecal('Decal_box', decal('RETTUNGSDIENST', 'KRANKENWAGEN · 112', 2.6, .55, '#f5f6f7', '#d01818'), 2.5, .52, 1.012, 1.88, -1.3);
+    sideDecal('Decal_cross', decal('+', '', 1, 1, '#d01818', '#fff'), .5, .5, 1.013, 1.45, -2.45);
+    bx('Body_bumper', 1.96, .26, .24, 0, .62, 2.76, dark, .06); slab('Body_grille', .9, .3, .05, 0, .9, 2.8, dark);
+    for (const s of [1, -1]) { bx('Headlight_' + s, .38, .18, .06, s * .7, 1.05, 2.78, lampH, .04); bx('Taillight_' + s, .26, .5, .05, s * .86, 1.25, -2.8, lampT, .03); bx('Lamp_amber_' + s, .2, .1, .05, s * .8, .78, 2.8, amber, .02); }
+    slab('Lightbar_base', 1.3, .1, .38, 0, 2.58, .85, dark);
+    for (const [mat, x] of [[sirenA, -.34], [sirenB, .34]]) bx('Lightbar_' + x, .55, .13, .32, x, 2.67, .85, mat, .04);
+    for (const s of [1, -1]) bx('Lightbar_rear_' + s, .5, .1, .08, s * .6, 2.68, -2.7, s > 0 ? sirenA : sirenB, .02);
+    for (const [tag, x, z] of [['FL', .93, 1.85], ['FR', -.93, 1.85], ['BL', .93, -1.5], ['BR', -.93, -1.5]]) wheel(tag, x, z, .38, .26);
+  } else {
+    // Feuerwehr: 6,6 m lang, 2,5 m breit, hohes Fahrerhaus, roter Aufbau mit Rolltoren + Leiter
+    slab('Underbody', 2.0, .34, 6.4, 0, .92, 0, dark);
+    bx('Body_rear', 2.5, 1.85, 3.7, 0, 2.1, -1.45, paint, .07);
+    prof('Body_hood', [[3.0, 1.1], [3.0, 2.0], [3.32, 1.7], [3.32, 1.1]], 2.46, paint);
+    slab('Body_step', 2.4, .16, .5, 0, 1.0, 3.1, dark);
+    for (const s of [1, -1]) {
+      for (const z of [-2.65, -1.5, -.35]) slab('Shutter_' + s + z, .02, 1.3, 1.0, s * 1.26, 2.05, z, chrome);
+      slab('Stripe_yellow_' + s, .014, .16, 3.7, s * 1.255, 1.35, -1.45, stripeY);
+    }
+    slab('Stripe_yellow_rear', 2.51, .16, .02, 0, 1.35, -3.31, stripeY);
+    cab({ W: 2.5, zr: .4, zf: 3.0, zt: 2.8, yfl: 1.25, yb0: .95, yb: 2.0, yr: 3.2, d0: 1.15, d1: 2.8, seatX: .55, seatZ: 1.7, steer: [.55, 2.15, 2.35] });
+    sideDecal('Decal_fw', decal('FEUERWEHR', '112', 2.6, .6, '#c8141a', '#f4f4f4'), 2.4, .55, 1.262, 2.62, -1.45);
+    put('Decal_fw_rear', new THREE.PlaneGeometry(2.0, .45).rotateY(Math.PI), decal('FEUERWEHR', '', 2, .45, '#c8141a', '#f4f4f4'), 0, 2.6, -3.31);
+    bx('Body_grille', 1.5, .7, .08, 0, 1.7, 3.3, dark, .03); slab('Body_grille_chrome', 1.52, .06, .09, 0, 2.06, 3.3, chrome);
+    bx('Body_bumper', 2.4, .32, .34, 0, .92, 3.15, chrome, .08);
+    for (const s of [1, -1]) { bx('Headlight_' + s, .42, .22, .06, s * .95, 1.7, 3.33, lampH, .04); bx('Taillight_' + s, .3, .5, .05, s * .95, 1.6, -3.32, lampT, .03); bx('Lamp_amber_' + s, .2, .12, .05, s * 1.0, 1.35, 3.33, amber, .02); }
+    for (const x of [-.32, .32]) { slab('Ladder_rail' + x, .06, .1, 3.7, x, 3.12, -1.45, chrome); }
+    for (let i = 0; i < 9; i++) slab('Ladder_rung' + i, .6, .04, .04, 0, 3.12, -3.1 + i * .42, chrome);
+    slab('Lightbar_base', 1.7, .12, .42, 0, 3.3, 1.7, dark);
+    for (const [mat, x] of [[sirenA, -.55], [sirenB, .55]]) bx('Lightbar_' + x, .7, .15, .34, x, 3.41, 1.7, mat, .04);
+    for (const s of [1, -1]) bx('Lightbar_rear_' + s, .5, .12, .1, s * .9, 3.06, -3.3, s > 0 ? sirenA : sirenB, .02);
+    bx('Monitor_base', .22, .2, .22, 0, 3.38, .95, dark, .04);                        // Wasserwerfer auf dem Dach (Düse zeigt nach vorn)
+    put('Monitor_barrel', new THREE.CylinderGeometry(.05, .07, .8, 10).rotateX(Math.PI / 2 - .35), chrome, 0, 3.55, 1.25);
+    for (const [tag, x, z] of [['FL', 1.1, 2.3], ['FR', -1.1, 2.3], ['BL', 1.1, -1.6], ['BR', -1.1, -1.6]]) wheel(tag, x, z, .55, .42);
+  }
+  return S;
+}
+const FIRE_MONITOR = V(0, 3.6, 1.7);                                      // Düse des Wasserwerfers (Auto-Koordinaten)
+function findSirenMats(root) {
+  const S = { a: [], b: [] }, seen = new Set();
+  root.traverse(o => { if (!o.isMesh) return; for (const m of [].concat(o.material)) if (m?.name && !seen.has(m)) { seen.add(m); if (/^siren_a/.test(m.name)) S.a.push(m); else if (/^siren_b/.test(m.name)) S.b.push(m); } });
+  return S.a.length || S.b.length ? S : null;
+}
+function flashSiren(S, on) {
+  if (!S) return; const ph = on ? Math.floor(time * 6) % 2 : -1;
+  for (const m of S.a) m.emissiveIntensity = ph === 0 ? 5 : .12;
+  for (const m of S.b) m.emissiveIntensity = ph === 1 ? 5 : .12;
+}
+// Polizei-Lack für den Jetta: weiße Karosserie, "POLIZEI"-Schriftzug an den Türen, Blaulichtbalken auf dem Dach
+const copDoorDecal = (() => { const [c, g] = C(512, 150); g.fillStyle = '#f4f6f8'; g.fillRect(0, 0, 512, 150); g.fillStyle = '#0b4fb3'; g.fillRect(0, 22, 512, 106); g.fillStyle = '#fff'; g.font = '800 82px system-ui,sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('POLIZEI', 256, 77); const m = new THREE.MeshBasicMaterial({ map: T(c, false), polygonOffset: true, polygonOffsetFactor: -2, toneMapped: false }); m.name = 'decal_text'; return m; })();
+function applyPoliceLivery(c, vis, ch, doors, top, dz) {
+  c.bodyMat.color.setHex(0xf4f6f8); c.fl.orig[0] = c.bodyMat.color.clone();
+  for (const d of doors) {
+    const len = d.box.max.z - d.box.min.z, cy = (d.box.min.y + d.box.max.y) / 2, cz = (d.box.min.z + d.box.max.z) / 2, ox = d.side * (Math.max(Math.abs(d.box.min.x), Math.abs(d.box.max.x)) + .006);
+    const w = Math.min(.66, len * .78), p = new THREE.Mesh(new THREE.PlaneGeometry(w, w * 150 / 512), copDoorDecal);
+    p.position.set(ox, cy + .03, cz).sub(d.pivot.position); p.rotation.y = d.side * Math.PI / 2; d.pivot.add(p);
+  }
+  const bar = new THREE.Group(), a = mk0('siren_a'), b = mk0('siren_b');
+  const base = new THREE.Mesh(BOX, M(0x16181b, { roughness: .6 })); base.scale.set(1.0, .05, .28); bar.add(base);
+  for (const [m, x] of [[a, -.26], [b, .26]]) { const l = new THREE.Mesh(BOX, m); l.scale.set(.46, .09, .22); l.position.set(x, .07, 0); bar.add(l); }
+  bar.position.set(0, top + .02, dz - .1); ch.add(bar);
+  function mk0(n) { const m = new THREE.MeshStandardMaterial({ color: 0x0a1a66, emissive: 0x1040ff, emissiveIntensity: .12 }); m.name = n; return m; }
+}
+// Wasserwerfer der Feuerwehr
+const hoseFx = new PSys(900, 1.15, false, true, true);
+function setHose(on) {
+  if (on && vehicle.emerg !== 'fire') return;
+  job.hose = on; if (on) msg('Wasserwerfer an – Feuer anspritzen!', 2.5);
+}
+function extinguish(f) {
+  if (!f.burning) return; f.burning = false; f.heat = 0; f.wet = 0; const n = burning.indexOf(f); if (n >= 0) burning.splice(n, 1);
+  for (let i = 0; i < 25; i++) smoke.spawn(...fBox(f).getCenter(V()).toArray(), rand(-1, 1), rand(1, 3), rand(-1, 1), rand(2, 4));
+}
+function extinguishNet(f) { extinguish(f); share('ext', { i: flammables.indexOf(f) }); }
+function hoseSpray(origin, dir, dt, mine) {
+  for (let i = 0, n = Math.max(1, Math.round(150 * dt)); i < n; i++) hoseFx.spawn(origin.x, origin.y, origin.z, dir.x * 22 + rand(-.9, .9), dir.y * 22 + rand(-.5, .9), dir.z * 22 + rand(-.9, .9), rand(1.1, 1.7));
+  if (!mine) return;
+  for (const f of burning.slice()) {                                      // trifft der Strahl ein brennendes Ding? -> löschen
+    const c = fBox(f).getCenter(V()), d = v1.copy(c).sub(origin), along = d.dot(dir), big = f.kind === 'building';
+    if (along < 2 || along > 36) { f.wet = Math.max(0, (f.wet || 0) - dt * .3); continue; }
+    const perp = d.addScaledVector(dir, -along).length();
+    if (perp < (big ? 12 : 4.5)) { f.wet = (f.wet || 0) + dt; if (f.wet > (big ? 5 : 2.2)) extinguishNet(f); }
+  }
+}
+function updEmergency(dt) {
+  // eigenes Auto: Blaulicht blinkt bei Sirene, Wasserwerfer
+  if (pcar.vis && pcar.sirenMats === undefined) pcar.sirenMats = findSirenMats(pcar.vis);
+  if (pcar.sirenMats) flashSiren(pcar.sirenMats, job.siren);
+  if (job.hose && vehicle.emerg === 'fire') {
+    const o = pcar.group.localToWorld(v2.copy(FIRE_MONITOR)), d = V(Math.sin(pcar.heading), .3, Math.cos(pcar.heading)).normalize();
+    hoseSpray(o, d, dt, true); if (Math.floor(time * 4) !== Math.floor((time - dt) * 4)) playAt(SND.splash || SND.crash, o, .35, 8);
+  } else if (job.hose) job.hose = false;
+  hoseFx.update(dt, -9.8);
+  // Autos der anderen: Blaulicht, Strahl, Raumflug-Flammen
+  for (const p of net.players.values()) {
+    const cm = p.carMesh; if (!cm) continue;
+    if (p.sirenMatsOf !== cm) { p.sirenMatsOf = cm; p.sirenMats = findSirenMats(cm); }
+    if (p.sirenMats) flashSiren(p.sirenMats, !!p.st?.sir);
+    if (p.st?.hs && cm.visible) { cm.updateMatrixWorld(true); const o = cm.localToWorld(v2.copy(FIRE_MONITOR)), hd = p.st.c ? p.st.c[3] : 0; hoseSpray(o, V(Math.sin(hd), .3, Math.cos(hd)).normalize(), dt, false); }
+    const jt = !!(p.st?.c && p.st.jt && cm.visible);
+    if (jt && (!p.jetFx || p.jetFx.parent !== cm)) { p.jetFx?.parent?.remove(p.jetFx); p.jetFx = jetMakeFx(cm, metaOf(p.carType).half); }
+    if (p.jetFx) jetAnimate(p, p.jetFx, jt, .8, dt, cm);
+  }
+}
+
+// ===================================================================
 // Hupe (linker Stick drücken / PC: B) – alle hören sie
 // ===================================================================
 SND.horn = mkBuf(.5, t => { const e = Math.min(1, t * 50) * Math.min(1, (.5 - t) * 25); return (Math.sin(2 * Math.PI * 415 * t) + Math.sin(2 * Math.PI * 523 * t) + .35 * Math.sin(2 * Math.PI * 830 * t) + .25 * Math.sin(2 * Math.PI * 1046 * t)) * .16 * e; });
@@ -5040,21 +5733,21 @@ function kick(t, vol = .9) { const o = AC.createOscillator(), g = AC.createGain(
 function noiseHit(t, dur, freq, vol, type = 'highpass') { const s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = radio.noise; f.type = type; f.frequency.value = freq; g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur); s.connect(f); f.connect(g); g.connect(radio.out); s.start(t, Math.random() * .5); s.stop(t + dur + .02); }
 const CHORDS = { lofi: [[57, 60, 64, 67], [50, 53, 57, 60], [55, 59, 62, 65], [48, 52, 55, 59]], klassik: [[48, 55, 60, 64], [45, 52, 57, 60], [41, 48, 53, 57], [43, 50, 55, 59]], schlager: [[48, 52, 55], [53, 57, 60], [55, 59, 62], [48, 52, 55]] };
 function radioStep(i, t, sp) {
-  const bar = Math.floor(i / 16) % 4, s = i % 16;
-  if (radio.st === 0) {                                                 // Lofi: weiche Akkorde, gemütlicher Beat
+  const bar = Math.floor(i / 16) % 4, s = i % 16, ST = radio.play ?? radio.st;
+  if (ST === 0) {                                                       // Lofi: weiche Akkorde, gemütlicher Beat
     const ch = CHORDS.lofi[bar];
     if (s === 0) ch.forEach(m => tone(mtof(m), t, sp * 15, 'triangle', .05, .08));
     if (s === 0 || s === 7 || s === 10) kick(t, .55);
     if (s === 4 || s === 12) noiseHit(t, .18, 1800, .16, 'bandpass');
     if (s % 2 === 0) noiseHit(t, .04, 7000, .045);
     if (s === 8 || s === 14) tone(mtof(ch[3] + 12 + pick([0, 2, -2])), t, sp * 3, 'sine', .05);
-  } else if (radio.st === 1) {                                          // Techno
+  } else if (ST === 1) {                                                // Techno
     if (s % 4 === 0) kick(t, 1);
     if (s % 4 === 2) noiseHit(t, .06, 8000, .11);
     if (s === 4 || s === 12) noiseHit(t, .12, 2500, .11, 'bandpass');
     if (s % 2 === 1) tone(mtof([33, 33, 45, 33, 36, 33, 45, 31][Math.floor(s / 2)]), t, sp * 1.5, 'sawtooth', .09);
     if (bar % 2 === 1 && s === 14) tone(mtof(69), t, sp * 2, 'square', .03);
-  } else if (radio.st === 2) {                                          // Klassik: gebrochene Akkorde wie am Klavier
+  } else if (ST === 2) {                                                // Klassik: gebrochene Akkorde wie am Klavier
     const ch = CHORDS.klassik[bar], arp = [0, 1, 2, 3, 2, 1, 2, 3];
     if (s % 2 === 0) tone(mtof(ch[arp[(s / 2) % 8]] + 12), t, sp * 6, 'triangle', .08, .005);
     if (s === 0) tone(mtof(ch[0] - 12), t, sp * 16, 'sine', .1);
@@ -5068,10 +5761,17 @@ function radioStep(i, t, sp) {
   }
 }
 function updRadio() {
-  if (!(radio.on && player.inCar && vehicle.type !== 'scooter' && AC.state === 'running')) return;
-  radioOut(); if (radio.pa.parent !== pcar.group) { pcar.group.add(radio.pa); radio.pa.position.set(0, 1, .6); }
-  radio.out.gain.value = save.vol;
-  const sp = 60 / STATIONS[radio.st].bpm / 4;
+  if (AC.state !== 'running') return;
+  let st = radio.st, vol = save.vol, host = pcar.group, on = radio.on && player.inCar && vehicle.type !== 'scooter';
+  if (!on && player.ride) {                                              // Mitfahrer hören das Radio des Fahrers
+    const d = net.players.get(player.ride.id), r = d?.st?.cp?.r ?? -1;
+    if (r >= 0 && d.carMesh?.visible) { on = true; st = r; vol = (d.st.cp.v ?? .6) * .85; host = d.carMesh; }
+  }
+  if (!on) return;
+  radio.play = st;
+  radioOut(); if (radio.pa.parent !== host) { host.add(radio.pa); radio.pa.position.set(0, 1, .6); }
+  radio.out.gain.value = vol;
+  const sp = 60 / STATIONS[st].bpm / 4;
   if (radio.next < AC.currentTime) radio.next = AC.currentTime + .05;
   while (radio.next < AC.currentTime + .2) { radioStep(radio.step++, radio.next, sp); radio.next += sp; }
 }
@@ -5469,6 +6169,12 @@ function showRemoteScreen(p, d) {
   img.onload = () => { p.scrCan.getContext('2d').drawImage(img, 0, 0, 90, 192); p.scrTex.needsUpdate = true; };
   img.src = d;
 }
+function setRemoteItem(hd, type) {
+  if ((hd.itemName || '') === (type || '')) return;
+  if (hd.itemMesh) { hd.g.remove(hd.itemMesh); hd.itemMesh = null; }
+  hd.itemName = type || ''; if (!type || !ITEM_BUILD[type]) return;
+  const m = new THREE.Mesh(itemGeo(type), itemMat); m.position.set(0, -.012, -.075); hd.g.add(m); hd.itemMesh = m;
+}
 const TOOL_BY_NAME = n => TOOLS.find(t => t.name === n);
 function setRemoteTool(hd, name) {
   if (hd.toolName === name) return;
@@ -5575,6 +6281,7 @@ function myState() {
     pp: phoneG.visible && phone.where === 'hand' ? pose(phoneG) : 0,
     c: 0, d: player.dead ? 1 : 0,
   };
+  if (vr) { if (L?.held?.type === 'item') st.il = L.held.it.type; if (Rh?.held?.type === 'item') st.ir = Rh.held.it.type; } else if (heldDesk) st.ir = heldDesk.type;   // Ware in der Hand sehen die anderen
   const gp = c.group.position;
   if (player.inCar) {
     // Ort, Lage, Federung und Tempo – damit die anderen dein Auto flüssig und mit Stoßdämpfern sehen
@@ -5597,8 +6304,10 @@ function myState() {
   if (save.house >= 0) st.home = save.house;
   if (save.dog && dog.g) st.dg = [r2(dog.pos.x), r2(dog.pos.y), r2(dog.pos.z), r2(dog.yaw), dog.inCar ? 1 : 0];
   if (job.siren) st.sir = 1;
+  if (pcar.jet?.on && player.inCar) st.jt = 1;                           // Raumflug: andere sehen die Flammen
+  if (job.hose) st.hs = 1;                                               // Wasserwerfer an
   // CarPlay des Fahrers, damit Mitfahrer dasselbe auf den Displays sehen
-  if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on && POI[nav.n] ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0, r: radio.on ? radio.st : -1 };
+  if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on && POI[nav.n] ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0, r: radio.on ? radio.st : -1, v: r2(save.vol) };
   st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
   if (alarm.on) st.al = 1;                                              // Auto-Alarm (Licht + Hupe bei allen)
   // Im Auto: Kopf, Hände und Handy relativ zum Auto senden -> bei Tempo hängt nichts hinterher
@@ -5880,7 +6589,7 @@ function updAvatar(p, dt, k, self = false) {
     const ta = V(a[0], a[1], a[2]), tqa = new THREE.Quaternion(a[3], a[4], a[5], a[6]);
     if (snap || !hd.init) { hd.sp.copy(ta); hd.sq.copy(tqa); hd.init = true; } else { hd.sp.lerp(ta, k); hd.sq.slerp(tqa, k); }
     hd.g.position.copy(hd.sp); hd.g.quaternion.copy(hd.sq); toW(hd.g.position, hd.g.quaternion);
-    if (!self) setRemoteTool(hd, i === 0 ? s.tl : s.tr);   // bei dir selbst ist die echte Waffe schon in der Hand
+    if (!self) { setRemoteTool(hd, i === 0 ? s.tl : s.tr); setRemoteItem(hd, i === 0 ? s.il : s.ir); }   // bei dir selbst ist die echte Waffe/Ware schon in der Hand
     const sh = V((i === 0 ? 1 : -1) * .19, 1.43, 0).applyMatrix4(r.matrixWorld.compose(r.position, r.quaternion, r.scale));
     if (inCar) sh.copy(p.hp).add(V((i === 0 ? 1 : -1) * .19, -.22, 0).applyAxisAngle(UP, yaw + Math.PI));
     const hand = hd.g.position.clone(), dir = hand.clone().sub(sh), d = Math.min(dir.length(), .58); dir.normalize();
@@ -6173,6 +6882,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   };
   mergeIn(ch); mergeIn(ws); doors.forEach(d => mergeIn(d.pivot, true));
   for (const w of Object.values(wheels)) { mergeIn(w.steer); mergeIn(w.spin); }
+  if (VEHICLES.find(v => v.id === id)?.emerg === 'police') applyPoliceLivery(c, vis, ch, doors, top, drv.box.getCenter(V()).z);   // Polizeiauto: weißer Lack, Schriftzug, Blaulicht
   // Fensterscheiben in den Türen (zum Runterlassen): fahren um ihre eigene Höhe in die Tür
   const doorGlass = doors.map((d, i) => {
     const l = [];
@@ -6229,7 +6939,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   buildRainFx(c, wsGeo, ch, eye);
   buildDashcam(ch, wsGeo, eye, halfW, top);                            // Dashcam an der Frontscheibe
   Object.assign(c, { doorGlass, wins: doors.map(() => 0), winT: doors.map(() => 0), dmg: null, dents: [], crack: null });                                   // Regentropfen + Scheibenwischer (nur am eigenen Auto)
-  c.group.remove(c.vis); c.vis = vis; c.chassis = ch; c.group.add(vis);
+  c.group.remove(c.vis); c.vis = vis; c.chassis = ch; c.group.add(vis); c.sirenMats = undefined;
   const dz = drv.box.getCenter(V()).z;
   Object.assign(c, {
     doors, wheelBase: wb, wheelSpin: ws, wheelR: steer.length ? partBox(steer).getSize(V()).x / 2 : .18,
@@ -6497,7 +7207,7 @@ safe('Feuerzeug', AS.loadPoly('vintage_lighter'), g => upgradeTools('vintage_lig
 // Eigene Autos aus assets/models/autos/*.glb (z.B. bmw.glb, urus.glb, taigo.glb, polo.glb, van.glb)
 const carBootP = AS.listDir('assets/models/autos/').then(async files => {
   for (const f of files) { const id = f.replace(/\.(glb|gltf)$/i, '').toLowerCase(); if (!VEHICLES.find(v => v.id === id)) VEHICLES.push({ id, name: NICE_NAMES[id] || f.replace(/\.(glb|gltf)$/i, ''), type: 'car', file: 'assets/models/autos/' + f }); }
-  const def = VEHICLES.find(v => v.id === 'bmw') || VEHICLES.find(v => v.file);
+  const def = VEHICLES.find(v => v.id === 'bmw') || VEHICLES.find(v => v.id === 'jetta') || VEHICLES.find(v => v.file && !v.emerg);
   if (def) { try { upgradePlayerCar(await AS.loadUrl(def.file), def.id); vehicle = def; return; } catch (e) { console.warn(e); } }
   upgradePlayerCar(await AS.loadCar(), 'ferrari');
 });
@@ -6513,6 +7223,7 @@ Promise.all(['asphalt_02', 'concrete_pavers', 'aerial_grass_rock', 'clay_roof_ti
 // Spiel-Loop
 // ===================================================================
 setPhone('pocket');
+initShop();                                                             // Essen + Getränke auf die Verkaufstische legen
 // Handy einmal vorbereiten (Shader + Bildschirm), damit das erste A-Drücken nicht hängt
 phoneG.visible = true; composePhone(); renderer.compile(scene, camera); phoneG.visible = false;
 desk.yaw = Math.PI / 2;
@@ -6605,11 +7316,11 @@ function frame() {
   }
   if (player.dead) { player.deadT += dt; deathFx.material.opacity = Math.min(.85, player.deadT); if (player.deadT > 3) respawn(); }
   else {
-    if (time - lastHurt > 5 && player.hp < 100) player.hp = Math.min(100, player.hp + dt * 6);   // Leben regeneriert sich
+    if (time - lastHurt > 5 && player.hp < 100 && save.hunger > 0 && save.thirst > 0) player.hp = Math.min(100, player.hp + dt * 6 * (save.hunger > .3 && save.thirst > .3 ? 1 : .4));   // Leben regeneriert sich (nicht bei Hunger/Durst)
     hurt = Math.max(0, hurt - dt * 1.5); deathFx.material.opacity = hurt * .45 + (player.hp < 35 ? .12 + Math.sin(time * 6) * .06 : 0);
   }
   updWeather(dt); updMission(dt); updVillain(dt); updIntro(dt); updDisasters(dt);
-  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio(); updMaint(dt);
+  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio(); updEmergency(dt); updNeeds(dt); updShop(dt); updMaint(dt);
   saveT -= dt; if (saveT <= 0) { saveT = 5; writeSave(); }
   hud.visible = time < hudUntil;
   boomLight.intensity *= Math.pow(.02, dt); muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 120);
@@ -6622,4 +7333,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, get money() { return money; }, set money(v) { money = v; } };
