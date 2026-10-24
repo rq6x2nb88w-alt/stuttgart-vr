@@ -3736,7 +3736,7 @@ function release(h) {
 const phoneRay = new THREE.Raycaster();
 function vrInput(dt) {
   const L = handBy('left'), Rh = handBy('right');
-  if (maint.on) { if (Rh?.down[4] && isAdmin() && maint.panel) { probeServer(true); msg('Server wird geöffnet …', 2); } return; }   // Wartung: nichts geht, nur der Admin kann wieder öffnen
+  if (maint.on) { if (Rh?.down[4] && isAdmin() && maint.panel) probeServer(true); return; }   // Wartung: nichts geht, nur der Admin kann (ohne Hinweis) mit A wieder öffnen
   for (const h of hands) { if (h.down[1]) tryGrab(h); if (h.up[1]) release(h); }
   laser.visible = false;
   // Zeigestrahl aufs Handy oder aufs Auto-Display (CarPlay); Abzug = antippen
@@ -4601,19 +4601,23 @@ function serverShutdown() {
 function onShutdown() {
   if (maint.on) return; maint.on = true; maint.t = 0;
   intro = { t: 99 }; fadeFx.visible = true; fadeFx.material.opacity = 1;   // alles schwarz
-  try { listener.setMasterVolume(0); } catch (e) { }
-  ring.pause(); radio.on = false; if (phone.call) endCall();
+  for (const o of scene.children) if (o !== dolly) o.visible = false;      // Welt ausblenden (auch in VR: schwarz statt eingefroren)
+  scene.background = new THREE.Color(0); scene.fog = null; hud.visible = false; hudUntil = 0; phoneG.visible = false;
+  document.getElementById('cross')?.style.setProperty('display', 'none'); try { document.exitPointerLock(); } catch (e) { }
+  ring.pause(); radio.on = false; if (phone.call) endCall(); phone.gallery.forEach(it => it.vid?.pause());
+  silence();
   net.online = false; try { net.ws?.close(); } catch (e) { }
 }
+// absolute Stille (kein Motor, kein Radio, keine Stimmen, kein Ton beim Popup)
+function silence() { try { listener.setMasterVolume(0); } catch (e) { } if (AC.state === 'running') AC.suspend().catch(() => { }); ring.pause(); }
 function maintPanel() {
   const [c, g] = C(1024, 512);
   rr(g, 0, 0, 1024, 512, 48, '#14171d'); g.strokeStyle = '#c62828'; g.lineWidth = 10; g.beginPath(); g.roundRect(5, 5, 1014, 502, 44); g.stroke();
-  warnIcon(g, 512, 120, 3.2);
-  tx(g, 'Service wurde geschlossen', 512, 250, 64, '#fff', 'center', 800); tx(g, 'für Reparierung', 512, 320, 56, '#fff', 'center', 700);
-  tx(g, 'Wir sind bald wieder da – das Spiel lädt dann von selbst neu.', 512, 400, 30, '#aab', 'center', 500);
-  if (isAdmin()) tx(g, 'Admin: ' + (xrOn() ? 'A' : 'Leertaste') + ' = Server wieder öffnen', 512, 456, 30, '#ffd21a', 'center', 700);
-  const m = new THREE.Mesh(new THREE.PlaneGeometry(.9, .45), new THREE.MeshBasicMaterial({ map: T(c, false), transparent: true, depthTest: false, toneMapped: false }));
-  m.position.set(0, 0, -.75); m.renderOrder = 1001; m.layers.set(OVERLAY); return m;
+  warnIcon(g, 512, 130, 3.2);
+  tx(g, 'Service wurde geschlossen', 512, 270, 64, '#fff', 'center', 800); tx(g, 'für Reparierung', 512, 345, 56, '#fff', 'center', 700);
+  tx(g, 'Wir sind bald wieder da – das Spiel lädt dann von selbst neu.', 512, 430, 30, '#aab', 'center', 500);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(.64, .32), new THREE.MeshBasicMaterial({ map: T(c, false), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
+  m.position.set(0, 0, -.8); m.renderOrder = 1001; m.layers.set(OVERLAY); m.frustumCulled = false; return m;
 }
 // prüft regelmäßig, ob der Server wieder offen ist (dann neu laden); reopen = Admin öffnet ihn wieder
 function probeServer(reopen) {
@@ -4629,8 +4633,12 @@ function probeServer(reopen) {
 }
 function updMaint(dt) {
   if (!maint.on) return; maint.t += dt;
-  fadeFx.visible = true; fadeFx.material.opacity = 1;
-  if (maint.t > 5 && !maint.panel) { maint.panel = maintPanel(); camera.add(maint.panel); try { listener.setMasterVolume(1); } catch (e) { } uiTone(SND.warn); }
+  fadeFx.visible = true; fadeFx.material.opacity = 1; silence();
+  if (maint.t > 5 && !maint.panel) { maint.panel = maintPanel(); camera.add(maint.panel); }
+  if (maint.panel) {                                                       // Popup erscheint animiert (einblenden + leicht aufploppen), ohne Ton
+    const k = Math.min(1, (maint.t - 5) / .7), e = 1 + 2.70158 * (k - 1) ** 3 + 1.70158 * (k - 1) ** 2;
+    maint.panel.scale.setScalar(.55 + .45 * e); maint.panel.material.opacity = Math.min(1, k * 1.8); maint.panel.position.y = -.05 * (1 - ease(k));
+  }
   maint.probeT -= dt; if (maint.t > 8 && maint.probeT <= 0) { maint.probeT = 10; probeServer(false); }
 }
 
@@ -6534,6 +6542,7 @@ renderer.setAnimationLoop(() => {
 function frame() {
   if (PROF.on) { profT = performance.now(); PROF.n++; }
   const dt = Math.min(clock.getDelta(), .05); time += dt;
+  if (maint.on) { if (xrOn()) { pollPads(); vrInput(dt); } updMaint(dt); return; }   // Wartung: nur Schwarz + Popup, sonst läuft nichts
   camera.getWorldPosition(headWorld);
   if (xrOn()) { pollPads(); if (!player.dead) { vrInput(dt); useTools(dt); } }
   else if (startEl.style.display === 'none' && !player.dead) deskTick(dt);
