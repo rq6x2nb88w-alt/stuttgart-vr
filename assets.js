@@ -157,6 +157,35 @@ export function splitGeometry(geo, pred) {
   return [mk(A), mk(B)];
 }
 
+// Geometrie an Ebenen sauber zerschneiden (Dreiecke an der Kante teilen statt zackig nach Mittelpunkt):
+// planes = [[nx, ny, nz, d], …] – "innen" ist, wo n·p + d >= 0 für alle Ebenen gilt. Ergebnis: [außen, innen]
+export function clipSplit(geo, planes) {
+  const g = geo.index ? geo.toNonIndexed() : geo;
+  const names = Object.keys(g.attributes), A = names.map(n => g.attributes[n]), pi = names.indexOf('position');
+  const outA = names.map(() => []), inA = names.map(() => []);
+  const vert = t => A.map(a => { const o = []; for (let c = 0; c < a.itemSize; c++) o.push(a.getComponent ? a.getComponent(t, c) : a.array[t * a.itemSize + c]); return o; });
+  const mix = (a, b, k) => a.map((av, i) => av.map((x, c) => x + (b[i][c] - x) * k));
+  const emit = (dst, poly) => { for (let i = 1; i + 1 < poly.length; i++) for (const v of [poly[0], poly[i], poly[i + 1]]) v.forEach((vals, ai) => dst[ai].push(...vals)); };
+  const dist = (v, p) => p[0] * v[pi][0] + p[1] * v[pi][1] + p[2] * v[pi][2] + p[3];
+  const pos = g.attributes.position;
+  for (let t = 0; t < pos.count; t += 3) {
+    let inside = [vert(t), vert(t + 1), vert(t + 2)];
+    for (const pl of planes) {
+      const keep = [], drop = [];
+      for (let i = 0; i < inside.length; i++) {
+        const a = inside[i], b = inside[(i + 1) % inside.length], da = dist(a, pl), db = dist(b, pl);
+        (da >= 0 ? keep : drop).push(a);
+        if ((da >= 0) !== (db >= 0)) { const m = mix(a, b, da / (da - db)); keep.push(m); drop.push(m); }
+      }
+      if (drop.length >= 3) emit(outA, drop);
+      inside = keep; if (inside.length < 3) break;
+    }
+    if (inside.length >= 3) emit(inA, inside);
+  }
+  const mk = arrs => { const o = new THREE.BufferGeometry(); names.forEach((n, k) => o.setAttribute(n, new THREE.BufferAttribute(new Float32Array(arrs[k]), g.attributes[n].itemSize))); return o; };
+  return [mk(outA), mk(inA)];
+}
+
 // Fassaden-Atlas aus dem 3D-Baukasten rendern (4x4 Kacheln à 3m x 3m bzw. 3,75m mit Dachgesims)
 // Drei Atlanten: Farbe (albedo), Normalen (Relief der Fenster/Putz), Rauheit (Glas glänzt, Putz matt)
 export function bakeFacades(renderer, kit) {

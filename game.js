@@ -1100,7 +1100,7 @@ async function getVehicle(id) {
     money -= CAR_PRICE[v.id]; (save.own ||= {})[v.id] = 1; addTx(v.name + ' gekauft', -CAR_PRICE[v.id]); writeSave(); uiTone(SND.arrive);
   }
   if (player.inCar) exitCar(true);
-  jetOff(true);
+  jetOff(true); trunkStash();                                            // Kofferraum-Inhalt bleibt (gespeichert) beim alten Auto
   msg('Hole ' + v.name + ' …', 2);
   if (v.type === 'scooter') {
     if (phone.where === 'holder') setPhone('pocket');                  // Scooter hat keinen Magneten
@@ -1113,7 +1113,7 @@ async function getVehicle(id) {
     try { const g = await loadVehicleModel(v); upgradePlayerCar(g, v.id); }
     catch (e) { msg('Modell konnte nicht geladen werden: ' + v.name, 4); return; }
   }
-  vehicle = v; resetVehicle(true);
+  vehicle = v; resetVehicle(true); trunkRestore(v.id);
   msg(v.name + ' steht bereit', 3);
 }
 // Jeder Spieler hat seinen eigenen Parkplatz an der Tankstelle (sonst stehen alle Autos ineinander)
@@ -4967,7 +4967,7 @@ const dropFx = new PSys(260, .05, false, true, true); dropFx.tint = [.55, .8, 1]
 // ---------- Ware greifen / loslassen ----------
 const nearestItem = (p, r) => { let best = null, bd = r; for (const it of shopItems) { if (it.held) continue; const d = it.mesh.getWorldPosition(v1).distanceTo(p); if (d < bd) { bd = d; best = it; } } return best; };
 function holdItem(it, h) {
-  outOfCart(it);
+  outOfCart(it); outOfTrunk(it);
   if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
   if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
   h.ctrl.add(it.mesh); it.mesh.position.set(0, -.012, -.075); it.mesh.rotation.set(0, 0, 0); it.mesh.scale.setScalar(1 - Math.min(.7, it.eatT / 2.6 * .75));
@@ -5034,6 +5034,11 @@ function updItem(it, dt) {
   if (it.held || it.rest) return;
   const m = it.mesh; it.v.y -= 9.8 * dt; m.position.addScaledVector(it.v, dt);
   for (const c of carts) { if (c.g.position.distanceToSquared(m.position) > 4) continue; const l = cartLocal(c, m.position); if (inBasket(l, 1.7) && l.y - it.bot <= CART_IN.y0 + .02) { putInCart(it, c); return; } }   // in den Einkaufswagen gefallen
+  const TK = pcar.trunk;
+  if (TK?.vol && TK.a > .25 && pcar.chassis && m.position.distanceToSquared(pcar.group.position) < 30) {   // in den offenen Kofferraum gelegt
+    const l = pcar.chassis.worldToLocal(v3.copy(m.position)), Q = TK.vol;
+    if (Math.abs(l.x) < Q.x && l.z > Q.z0 && l.z < Q.z1 && l.y < Q.y1 + .8 && l.y - it.bot <= Q.y0 + .01) { putInTrunk(it, l); return; }
+  }
   const sy = supportY(m.position.x, m.position.y + it.bot - .01, m.position.z) + it.bot;
   if (m.position.y <= sy) {
     m.position.y = sy;
@@ -5092,7 +5097,7 @@ function deskItemToggle() {
     if (cb) { cb.held = 'desk'; msg('Einkaufswagen schieben – Q = loslassen, Ware mit Q hineinwerfen', 3); }
     return;
   }
-  const it = best; outOfCart(it); if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
+  const it = best; outOfCart(it); outOfTrunk(it); if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
   if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
   camera.add(it.mesh); it.mesh.position.set(.17, -.17, -.4); it.mesh.rotation.set(0, 0, 0); it.mesh.scale.setScalar(1 - Math.min(.72, it.eatT / 2.6 * .75)); it.held = 'desk'; it.rest = false; heldDesk = it; tagItem = it; tagUntil = time + 2;
   playAt(SND.thump, headWorld, .3, 2);
@@ -5230,6 +5235,26 @@ function putInCart(it, c) {
   it.cart = c; it.rest = true; it.v.set(0, 0, 0); if (!c.items.includes(it)) c.items.push(it); playAt(SND.thump, it.mesh.getWorldPosition(v1), .35, 2);
 }
 const outOfCart = it => { if (it.cart) { it.cart.items = it.cart.items.filter(q => q !== it); it.cart = null; } };
+// ---------- Kofferraum als Stauraum: Ware hineinlegen (Kofferraum offen) – fährt mit und bleibt gespeichert, auch nach dem Neuladen ----------
+function putInTrunk(it, l) {
+  const Q = pcar.trunk.vol;
+  pcar.chassis.add(it.mesh); it.mesh.position.set(clamp(l.x, -Q.x + .05, Q.x - .05), Q.y0 + it.bot + .005, clamp(l.z, Q.z0 + .05, Q.z1 - .05)); it.mesh.rotation.set(0, rand(0, 6.28), 0);
+  it.trunk = true; it.rest = true; it.v.set(0, 0, 0); playAt(SND.thump, it.mesh.getWorldPosition(v1), .35, 2); trunkSave();
+}
+const outOfTrunk = it => { if (it.trunk) { it.trunk = false; trunkSave(); } };
+function trunkSave() {
+  (save.trunk ||= {})[vehicle.id] = shopItems.filter(i => i.trunk).map(i => ({ t: i.type, p: i.paid ? 1 : 0, s: i.stolen ? 1 : 0, a: r2(i.amt), e: r2(i.eatT), x: r3(i.mesh.position.x), y: r3(i.mesh.position.y), z: r3(i.mesh.position.z) }));
+  writeSave();
+}
+function trunkStash() { const l = shopItems.filter(i => i.trunk); if (l.length) { trunkSave(); l.forEach(removeItem); } }   // Auto wechseln: Inhalt bleibt im alten Auto (gespeichert)
+function trunkRestore(id) {
+  const Q = pcar.trunk?.vol, L = save.trunk?.[id]; if (!Q || !L?.length || vehicle.type === 'scooter') return;
+  for (const e of L) {
+    if (!SHOP_ITEMS[e.t]) continue;
+    const it = makeItem(e.t, V(), !!e.p); it.stolen = !!e.s; it.amt = e.a ?? 1; it.eatT = e.e || 0;
+    pcar.chassis.add(it.mesh); it.mesh.position.set(clamp(e.x, -Q.x + .05, Q.x - .05), Q.y0 + it.bot + .005, clamp(e.z, Q.z0 + .05, Q.z1 - .05)); it.mesh.scale.setScalar(1 - Math.min(.72, it.eatT / 2.6 * .75)); it.trunk = true; it.rest = true;
+  }
+}
 function updCarts(dt) {
   for (const c of carts) {
     if (c.held) {
@@ -5259,8 +5284,8 @@ function updShop(dt) {
   shopVisT -= dt;
   if (shopVisT <= 0) {
     shopVisT = .4;
-    for (const it of shopItems) it.mesh.visible = !!it.held || (it.cart ? it.cart.g.position : it.mesh.position).distanceToSquared(headWorld) < 55 * 55;
-    for (const it of shopItems.slice()) if (!it.held && !it.slot && !it.cart && it.mesh.position.distanceToSquared(headWorld) > 160 * 160) removeItem(it);       // liegengebliebene Ware weit weg verschwindet
+    for (const it of shopItems) it.mesh.visible = !!it.held || (it.cart ? it.cart.g.position : it.trunk ? pcar.group.position : it.mesh.position).distanceToSquared(headWorld) < 55 * 55;
+    for (const it of shopItems.slice()) if (!it.held && !it.slot && !it.cart && !it.trunk && it.mesh.position.distanceToSquared(headWorld) > 160 * 160) removeItem(it);       // liegengebliebene Ware weit weg verschwindet
     for (const it of shopItems) if (!it.paid && !it.stolen && it.I) {            // mit unbezahlter Ware aus dem Laden: Ladendiebstahl
       const p = it.mesh.getWorldPosition(v1), hb = it.I.hollow;
       if (!(p.x > hb.min.x - .6 && p.x < hb.max.x + .6 && p.z > hb.min.z - .6 && p.z < hb.max.z + .6)) { it.stolen = true; addWanted(1, 'Ladendiebstahl'); msg('Ladendiebstahl! Die Polizei ist alarmiert', 3.5); playAt(SND.warn, p, 1, 6); }
@@ -6867,6 +6892,11 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   // Schatten wirft nur eine grobe Kopie (~5.000 Dreiecke)
   const low = parts.map(p => ({ p, g: AS.decimate(p.geo, .09) })).filter(e => e.g.index.count);
   const shadowGeo = mergeGeometries(low.map(e => e.g));
+  // "Lenkrad" laut Name, aber winzig oder in der Mitte (z.B. Porsche: nur ein Logo-Teil) -> nicht verwenden, echtes Lenkrad suchen
+  {
+    const named = parts.filter(p => STEER_RE.test(p.name) && !/column/i.test(p.name));
+    if (named.length) { const b = partBox(named), s = b.getSize(V()); if (Math.max(s.x, s.y) < .2 || Math.abs(b.getCenter(V()).x) < .12) named.forEach(p => { p.name = 'Hub_' + p.name.replace(/steer(ing)?/ig, 'st'); }); }
+  }
   // Lenkrad ohne Namen im Modell (z.B. Tesla-Joch): flaches, ringförmiges Teil vor dem Fahrersitz suchen
   if (!parts.some(p => STEER_RE.test(p.name))) {
     let best = null, bs = 1e9;
@@ -6877,6 +6907,24 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
       if (score < bs) { bs = score; best = p; }
     }
     if (best) best.name = 'Steering_' + best.name;
+  }
+  // immer noch keins: Lenkradkranz als zusammenhängendes Stück in einem größeren Teil suchen (Porsche: im Leder-Innenraum) und herauslösen
+  if (!parts.some(p => STEER_RE.test(p.name))) {
+    let best = null, bs = 1e9;
+    for (const p of parts) {
+      if (isGlass(p) || isBody(p) || doorKeyOf(p.name)) continue;
+      const pb = p.geo.boundingBox; if (pb.max.y < top * .35 || pb.min.y > top * .9 || triCount(p.geo) > 120000) continue;
+      for (const b of islands(p.geo)) {
+        const s = b.getSize(V()), c0 = b.getCenter(V());
+        if (s.x < .28 || s.x > .44 || s.y < .22 || s.y > .46 || s.z > .3 || Math.abs(c0.x) < .2 || Math.abs(c0.x) > .6 || c0.y < top * .4 || c0.y > top * .8 || c0.z < bb.min.z * .1 || c0.z > bb.max.z * .55) continue;
+        const score = Math.abs(s.x - .37) + Math.abs(s.y - .36) * .5 + Math.abs(Math.abs(c0.x) - .37) * .3;
+        if (score < bs) { bs = score; best = { p, box: b.clone().expandByScalar(.012) }; }
+      }
+    }
+    if (best) {
+      const tmp = V(), [rest, rim] = AS.splitGeometry(best.p.geo, (x, y, z) => best.box.containsPoint(tmp.set(x, y, z)));
+      if (rim.attributes.position.count) { best.p.geo = rest; rest.computeBoundingBox(); rim.computeBoundingBox(); parts.push({ name: 'Steering_wheel_rim', geo: rim, mat: best.p.mat, path: [], dec: false }); }
+    }
   }
   const steer = parts.filter(p => STEER_RE.test(p.name) && !/column/i.test(p.name));
   const sc = steer.length ? partBox(steer).getCenter(V()) : V(.37, top * .66, .4);
@@ -6966,7 +7014,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     const glassG = drop ? new THREE.Group() : null; if (glassG) { glassG.name = 'trunkglass'; ch.add(glassG); }
     const gb = gl.length ? partBox(gl) : null;
     Object.assign(pivot.userData, { drop, glassH: gb ? (gb.max.y - gb.min.y) * .95 : 0 });
-    trunk = { pivot, handle, glassG, a: 0, anim: undefined, drop, max: drop ? 1.5 : 1.2, set: new Set(tParts), gl: new Set(gl), glassH: pivot.userData.glassH, a0: Math.atan2(handle.position.y, -handle.position.z), grab: null };
+    trunk = { pivot, handle, glassG, a: 0, anim: undefined, drop, max: drop ? 1.5 : 1.2, set: new Set(tParts), gl: new Set(gl), glassH: pivot.userData.glassH, a0: Math.atan2(handle.position.y, -handle.position.z), grab: null, box: tb };
   }
   const addTo = (parent, gg, mat, p, off) => {
     if (off) gg.translate(-off.x, -off.y, -off.z);
@@ -6996,9 +7044,9 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     if (d) { addTo(d.pivot, simp(p.geo, p).clone(), mat, p, d.pivot.position); continue; }
     if (realDoors) { for (const gg of chunks(simp(p.geo, p))) addTo(ch, gg, mat, p); continue; }
     const thr = glass ? .5 : isInner(p) ? .7 : .74; let rest = p.geo;
-    for (const dd of doors) {
-      const s = dd.side, inDoor = (x, y, z) => s * x > halfW * thr && z < zF && z > zR && y > .22 && y < top * (glass ? .94 : .9);
-      const [keep, door] = AS.splitGeometry(rest, inDoor); rest = keep;
+    for (const dd of doors) {                                           // sauberer Schnitt entlang der Türkanten
+      const s = dd.side, planes = [[s, 0, 0, -halfW * thr], [0, 0, -1, zF], [0, 0, 1, -zR], [0, 1, 0, -.22], [0, -1, 0, top * (glass ? .94 : .9)]];
+      const [keep, door] = AS.clipSplit(rest, planes); rest = keep;
       if (door.attributes.position.count) { if (!glass && !isInner(p)) dd.cut.push({ geo: door.clone() }); addTo(dd.pivot, simp(door, p), mat, p, dd.pivot.position); }
     }
     if (rest.attributes.position.count) addTo(ch, simp(rest, p), mat, p);
@@ -7094,16 +7142,30 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   // Infotainment-Display für CarPlay: der Bildschirm in der Mittelkonsole (am weitesten mittig)
   let screen = null;
   ch.traverse(o => { if (o.isMesh && o.userData.screen) { o.geometry.computeBoundingBox(); const ax = Math.abs(o.geometry.boundingBox.getCenter(V()).x); if (!screen || ax < screen.ax) screen = { m: o, ax }; } });
-  if (!screen) {   // Modell ohne Display: eigenes in die Mitte vom Armaturenbrett setzen
-    const pg0 = new THREE.PlaneGeometry(.24, .12);
-    const m = new THREE.Mesh(pg0,M(0x050608, { roughness: .2 })); m.position.set(0, holder.position.y - .17, holder.position.z - .12); m.lookAt(eye.x * .3, eye.y, eye.z); ch.add(m);
-    screen = { m };
-  }
+  // Modell ohne (Mini-)Display: eigenes einsetzen – per Sichtstrahl vom Fahrer aus kurz VOR das Armaturenbrett, nie darin versunken
+  vis.updateMatrixWorld(true);
+  const solidM = []; ch.traverse(o => { if (o.isMesh && o.material !== c.glassMat && !ws.getObjectById(o.id) && !o.userData.screen) solidM.push(o); });
+  const placeScreen = (tgt, w, h, name, from = eye) => {
+    const dir = tgt.clone().sub(from), L = dir.length(); dir.normalize(); ray.set(from, dir); ray.far = L + .3;
+    const hit = ray.intersectObjects(solidM, false).find(x => x.distance > .25);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M(0x050608, { roughness: .2 })); m.name = name; m.userData.screen = true;
+    m.position.copy(hit && hit.distance < L + .06 ? from.clone().addScaledVector(dir, hit.distance - .03) : tgt); m.lookAt(eye); ch.add(m); return m;   // nicht weit hinter das Ziel rutschen
+  };
+  if (!screen) screen = { m: placeScreen(V(0, sc.y - .02, sc.z + .2), .28, .14, 'Display_main_extra', V(0, eye.y, eye.z)) };   // Strahl aus der Mitte zwischen den Sitzen (nicht durchs Lenkrad)
   c.screen = screen.m;
-  // zweites Display hinter dem Lenkrad (das dem Lenkrad am nächsten liegt)
+  // zweites Display hinter dem Lenkrad (das dem Lenkrad am nächsten liegt) – fehlt es, kommt ein Mini-Display über die Nabe
   let cluster = null;
   ch.traverse(o => { if (o.isMesh && o.userData.screen && o !== c.screen) { o.geometry.computeBoundingBox(); const d = Math.abs(o.geometry.boundingBox.getCenter(V()).x - sc.x); if (!cluster || d < cluster.d) cluster = { m: o, d }; } });
+  if (!cluster) cluster = { m: placeScreen(V(sc.x, sc.y + .08, sc.z + .26), .22, .073, 'Display_cluster_extra') };
   c.cluster = cluster ? cluster.m : null;
+  if (trunk) {                                                           // Laderaum unter dem Deckel / hinter der Rückbank (Boden per Strahl nach unten)
+    const tb = trunk.box, cz = trunk.drop ? tb.min.z + .45 : (tb.min.z + tb.max.z) / 2, sy = trunk.drop ? (tb.min.y + tb.max.y) / 2 : tb.max.y + .05;
+    const fl = solidM.filter(o => !trunk.pivot.getObjectById(o.id) && !(trunk.glassG && trunk.glassG.getObjectById(o.id)));
+    ray.set(V(0, sy, cz), V(0, -1, 0)); ray.far = 2.5;
+    const lim = trunk.drop ? tb.min.y + .25 : tb.min.y - .03, fh = ray.intersectObjects(fl, false).find(x => x.point.y < lim && x.point.y > .25);   // Boden liegt unter der Ladekante
+    const floor = fh ? fh.point.y : Math.max(.35, tb.min.y - .35);
+    trunk.vol = { x: Math.min(halfW * .62, .7), z0: tb.min.z + (trunk.drop ? .1 : .06), z1: trunk.drop ? tb.min.z + 1.05 : tb.max.z - .05, y0: floor, y1: floor + (trunk.drop ? .7 : .45) };
+  }
   const uvBounds = m => { const a = m.geometry.attributes.uv; if (!a) return null; let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9; for (let i = 0; i < a.count; i++) { u0 = Math.min(u0, a.getX(i)); u1 = Math.max(u1, a.getX(i)); v0 = Math.min(v0, a.getY(i)); v1 = Math.max(v1, a.getY(i)); } return u1 - u0 > .05 && v1 - v0 > .05 ? { u0, u1, v0, v1 } : null; };
   c.screenUV = uvBounds(c.screen); c.screenOrig = c.screen.material;
   c.clusterUV = c.cluster ? uvBounds(c.cluster) : null; c.clusterOrig = c.cluster ? c.cluster.material : null;
@@ -7404,7 +7466,7 @@ safe('Feuerzeug', AS.loadPoly('vintage_lighter'), g => upgradeTools('vintage_lig
 const carBootP = AS.listDir('assets/models/autos/').then(async files => {
   for (const f of files) { const id = f.replace(/\.(glb|gltf)$/i, '').toLowerCase(); if (!VEHICLES.find(v => v.id === id)) VEHICLES.push({ id, name: NICE_NAMES[id] || f.replace(/\.(glb|gltf)$/i, ''), type: 'car', file: 'assets/models/autos/' + f }); }
   const def = VEHICLES.find(v => v.id === 'bmw') || VEHICLES.find(v => v.id === 'jetta') || VEHICLES.find(v => v.file && !v.emerg);
-  if (def) { try { upgradePlayerCar(await AS.loadUrl(def.file), def.id); vehicle = def; return; } catch (e) { console.warn(e); } }
+  if (def) { try { upgradePlayerCar(await AS.loadUrl(def.file), def.id); vehicle = def; trunkRestore(def.id); return; } catch (e) { console.warn(e); } }
   upgradePlayerCar(await AS.loadCar(), 'ferrari');
 });
 carBootP.catch(() => { }).finally(() => { carBoot = true; });
@@ -7529,4 +7591,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, get money() { return money; }, set money(v) { money = v; } };
