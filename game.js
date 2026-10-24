@@ -1671,19 +1671,8 @@ function holdTool(t, h) { h.ctrl.add(t.obj); t.obj.position.set(0, -.01, .03); t
 const laser = new THREE.Line(new THREE.BufferGeometry().setFromPoints([V(), V(0, 0, -1)]), new THREE.LineBasicMaterial({ color: 0x66ccff }));
 laser.visible = false;
 
-// HUD
-const [hudC, hudG] = C(1024, 128); const hudTex = T(hudC, false);
-const hud = new THREE.Mesh(new THREE.PlaneGeometry(.8, .1), new THREE.MeshBasicMaterial({ map: hudTex, transparent: true, depthTest: false, toneMapped: false }));
-hud.renderOrder = 999; hud.position.set(0, -.22, -.9); camera.add(hud);
-let hudUntil = 0, hudText = '';
-function msg(s, dur = 3) {
-  hudUntil = time + dur; if (s === hudText) return; hudText = s;
-  hudG.clearRect(0, 0, 1024, 128); hudG.font = '600 42px system-ui';
-  const fs = Math.min(42, 42 * 930 / hudG.measureText(s).width); hudG.font = `600 ${fs}px system-ui`;
-  const w = Math.min(1000, hudG.measureText(s).width + 60);
-  hudG.fillStyle = 'rgba(0,0,0,.65)'; hudG.beginPath(); hudG.roundRect(512 - w / 2, 24, w, 80, 40); hudG.fill();
-  hudG.fillStyle = '#fff'; hudG.textAlign = 'center'; hudG.textBaseline = 'middle'; hudG.fillText(s, 512, 64); hudTex.needsUpdate = true;
-}
+// Keine Text-Einblendungen im Blickfeld (Hinweise wie „Grip = greifen“ nerven) – Geld, Hunger, Durst und Fahndung stehen auf dem Handy
+function msg() { }
 const deathFx = new THREE.Mesh(new THREE.SphereGeometry(.3, 16, 12), new THREE.MeshBasicMaterial({ color: 0x990000, side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false }));
 deathFx.renderOrder = 998; camera.add(deathFx);
 
@@ -4319,7 +4308,7 @@ function updRainFx(dt) {
 const fadeFx = new THREE.Mesh(new THREE.SphereGeometry(.25, 16, 12), new THREE.MeshBasicMaterial({ color: 0, side: THREE.BackSide, transparent: true, opacity: 0, depthTest: false }));
 fadeFx.renderOrder = 999; camera.add(fadeFx);
 // Einblendungen (Hinweise, roter Rand, Vignette) nur im eigenen Sichtfeld – nicht im Handy-Video
-const OVERLAY = 5; camera.layers.enable(OVERLAY); for (const o of [hud, deathFx, fadeFx, vignette]) o.layers.set(OVERLAY);
+const OVERLAY = 5; camera.layers.enable(OVERLAY); for (const o of [deathFx, fadeFx, vignette]) o.layers.set(OVERLAY);
 vignette.layers.set(7);                                                  // Komfort-Rand bleibt aus (war in VR nie sichtbar – soll so bleiben, nicht dunkler werden)
 // three.js r160: in VR zeichnen die Augen-Kameras nur ihre eigenen Ebenen -> Einblendungen (Hinweise, Balken, Blur, Popup) dort freischalten
 function xrOverlay() { const xc = renderer.xr.getCamera(); xc.layers.enable(OVERLAY); for (const c of xc.cameras || []) c.layers.enable(OVERLAY); }
@@ -4808,28 +4797,15 @@ function onMoney(p, m) {
   if (m.gift > 0) { money += m.gift; addTx('Geschenk vom Admin', m.gift); writeSave(); uiTone(SND.arrive); msg('Der Admin hat dir ' + m.gift.toLocaleString('de-DE') + ' € geschenkt!', 4); }
 }
 // ---------- Server herunterfahren: Ablauf bei allen Spielern ----------
-//  0 s   alles friert ein (NPCs, Animationen, Autos), Stille
-//  5 s   die 3D-Modelle verschwinden nach und nach (erst die nahen)
-//  10 s  der Boden verschwindet, der Himmel wird schwarz – du schwebst an deinem Platz, nur die Gebäude stehen noch
-//  12,5 s alles wird unscharf (Blur)
-//  14 s  das Fenster "Service wurde geschlossen für Reparierung" ploppt animiert auf
+//  0 s    alles friert ein (NPCs, Animationen, Autos), Stille
+//  0,8 s  alle anderen Spieler sind auf einmal weg
+//  1,3 s  ganz schnell verschwindet alles außer den Gebäuden (Modelle, Boden, Himmel) – du schwebst an deinem Platz
+//  2,8 s  es wird schwarz
+//  3,6 s  „Stuttgart VR“-Animation mit „Suche nach Verbindung …“ (3 s)
+//  6,6 s  das Fenster "Service wurde geschlossen für Reparierung" ploppt animiert auf
 const maint = { on: false, t: 0, panel: null, probeT: 0 };
-const M_MODELS = 5, M_GROUND = 10, M_BLUR = 12.5, M_POPUP = 14;
-// Unschärfe: die Welt wird in ein winziges Bild gerendert und vergrößert vor die Augen gelegt (geht auch in VR)
-const blurRT = new THREE.WebGLRenderTarget(128, 128); blurRT.texture.colorSpace = THREE.SRGBColorSpace;
-const blurCam = new THREE.PerspectiveCamera(120, 1, .1, 4000);
-const blurFx = new THREE.Mesh(new THREE.PlaneGeometry(1.75, 1.75), new THREE.ShaderMaterial({          // weicher Gauß-Weichzeichner (7×7)
-  uniforms: { map: { value: blurRT.texture }, opacity: { value: 0 }, texel: { value: 1.7 / 128 } },
-  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-  fragmentShader: 'uniform sampler2D map; uniform float opacity; uniform float texel; varying vec2 vUv;\nvoid main() { vec3 c = vec3(0.0); float w = 0.0;\n for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) { float k = exp(-float(x * x + y * y) / 6.0); c += texture2D(map, vUv + vec2(float(x), float(y)) * texel).rgb * k; w += k; }\n gl_FragColor = vec4(c / w, opacity); }',
-  transparent: true, depthTest: false, depthWrite: false }));
-blurFx.position.z = -.5; blurFx.renderOrder = 1000; blurFx.layers.set(OVERLAY); blurFx.visible = false; camera.add(blurFx);
-function renderBlur() {
-  camera.updateMatrixWorld(true); camera.matrixWorld.decompose(blurCam.position, blurCam.quaternion, v1); blurCam.updateMatrixWorld(true);
-  const xr = renderer.xr.enabled, prev = renderer.getRenderTarget(); renderer.xr.enabled = false;
-  try { renderer.setRenderTarget(blurRT); renderer.render(scene, blurCam); } finally { renderer.setRenderTarget(prev); renderer.xr.enabled = xr; }
-}
-// welche Teile der Welt verschwinden: erst alle Modelle (Autos, Menschen, Bäume, Schilder …), dann der Boden; Gebäude bleiben
+const M_PLAYERS = .8, M_GONE = 1.3, M_DARK = 2.8, M_LOGO = 3.6, M_POPUP = 6.6;
+// welche Teile der Welt verschwinden: alle Modelle (Autos, Menschen, Bäume, Schilder …) und der Boden; Gebäude bleiben
 function maintLists() {
   const groundMats = new Set(Object.values(MAT)), models = [], ground = [...terrainMesh.children];
   const isBld = o => { let b = !!o.userData.bld; if (!b) o.traverse(c => { if (c.userData.bld) b = true; }); return b; };
@@ -4842,18 +4818,20 @@ function maintLists() {
   models.sort((a, b) => a.userData.mk - b.userData.mk); ground.sort(() => Math.random() - .5);
   return { models, ground };
 }
+// andere Spieler: sofort stumm (Sprach-Chat, Motor, Sirene), kurz danach auf einmal unsichtbar
+function mutePlayers() { for (const p of net.players.values()) { try { p.eng?.stop(); p.siren?.stop(); p.pc?.close(); } catch (e) { } if (p.audioEl) p.audioEl.srcObject = null; } }
+function hidePlayers() { for (const p of net.players.values()) for (const o of [p.root, p.tag, p.headM, p.phone, ...(p.hands || []).flatMap(h => [h.g, h.up, h.lo])]) if (o) o.visible = false; }
 const wsURL = () => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
 function serverShutdown() {
   if (!isAdmin()) return;
   if (net.online) netSend({ t: 'shutdown' }); else onShutdown();
 }
 function onShutdown() {
-  if (maint.on) return; Object.assign(maint, { on: true, t: 0, lists: null, hm: 0, hg: 0, dark: false, shT: 0 });   // ab jetzt läuft die Welt nicht mehr weiter (eingefroren)
-  intro = { t: 99 }; fadeFx.visible = false; fadeFx.material.opacity = 0;
-  hud.visible = false; hudUntil = 0; needHud.visible = false; tagSpr.visible = false;
+  if (maint.on) return; Object.assign(maint, { on: true, t: 0, lists: null, hm: 0, hg: 0, dark: false, shT: 0, gone: false, void: false, logo: null });   // ab jetzt läuft die Welt nicht mehr weiter (eingefroren)
+  intro = { t: 99 }; fadeFx.visible = false; fadeFx.material.opacity = 0; tagSpr.visible = false;
   document.getElementById('cross')?.style.setProperty('display', 'none');
   ring.pause(); radio.on = false; if (phone.call) endCall(); phone.gallery.forEach(it => it.vid?.pause());
-  silence();
+  mutePlayers(); silence();
   net.online = false; try { net.ws?.close(); } catch (e) { }
 }
 // absolute Stille (kein Motor, kein Radio, keine Stimmen, kein Ton beim Popup)
@@ -4866,6 +4844,69 @@ function maintPanel() {
   tx(g, 'Wir sind bald wieder da – das Spiel lädt dann von selbst neu.', 512, 430, 30, '#aab', 'center', 500);
   const m = new THREE.Mesh(new THREE.PlaneGeometry(.64, .32), new THREE.MeshBasicMaterial({ map: T(c, false), transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
   m.position.set(0, 0, -.8); m.renderOrder = 1001; m.layers.set(OVERLAY); m.frustumCulled = false; return m;
+}
+// „Stuttgart VR“-Animation im Schwarzen: Fernsehturm wächst hoch, Schriftzug Buchstabe für Buchstabe, darunter „Suche nach Verbindung …“
+const LOGO_PINK = '#e20074';
+function maintLogo() {
+  const [c, g] = C(1024, 512), tex = T(c, false);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(.72, .36), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthTest: false, depthWrite: false, toneMapped: false }));
+  m.position.set(0, .02, -.8); m.renderOrder = 1000; m.layers.set(OVERLAY); m.frustumCulled = false;
+  return { m, g, tex, f: -1 };
+}
+function drawLogo(L, a) {
+  const f = Math.floor(a * 40); if (f === L.f) return; L.f = f;            // höchstens 40 Bilder/s neu zeichnen
+  const g = L.g, k = s => ease(clamp(s, 0, 1)); g.clearRect(0, 0, 1024, 512);
+  // magentafarbener Schein hinter dem Turm
+  g.save(); g.translate(512, 190); g.scale(1, .55);
+  const rg = g.createRadialGradient(0, 0, 0, 0, 0, 330), gl = k(a / .8);
+  rg.addColorStop(0, `rgba(226,0,116,${.34 * gl})`); rg.addColorStop(.5, `rgba(110,20,140,${.13 * gl})`); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg; g.fillRect(-340, -340, 680, 680); g.restore();
+  // Fernsehturm wächst von unten nach oben (Schaft, Turmkorb, Antenne)
+  const top = 22, base = 250, grow = k((a - .05) / .9);
+  g.save(); g.beginPath(); g.rect(0, base - (base - top + 4) * grow, 1024, (base - top + 4) * grow + 2); g.clip();
+  g.shadowColor = LOGO_PINK; g.shadowBlur = 26; g.fillStyle = '#fff';
+  g.beginPath(); g.moveTo(492, base); g.lineTo(503, 112); g.lineTo(521, 112); g.lineTo(532, base); g.closePath(); g.fill();   // Schaft
+  g.beginPath(); g.roundRect(486, 84, 52, 30, 5); g.fill(); g.beginPath(); g.roundRect(492, 77, 40, 9, 3); g.fill();          // Turmkorb
+  g.beginPath(); g.moveTo(508, 78); g.lineTo(510.5, top); g.lineTo(513.5, top); g.lineTo(516, 78); g.closePath(); g.fill();   // Antenne
+  g.shadowBlur = 0; g.fillStyle = '#1b1f2a'; for (const y of [91, 100, 107]) g.fillRect(489, y, 46, 3);                    // Fensterbänder
+  g.fillStyle = LOGO_PINK; g.fillRect(509.5, top + 10, 5, 6); g.fillRect(509.5, top + 26, 5, 6);                            // rot-weiße Antenne
+  g.restore();
+  // Horizontlinie unter dem Turm
+  const hw = 330 * k(a / .7);
+  if (hw > 1) { const hg = g.createLinearGradient(512 - hw, 0, 512 + hw, 0); hg.addColorStop(0, 'rgba(226,0,116,0)'); hg.addColorStop(.5, 'rgba(226,0,116,.9)'); hg.addColorStop(1, 'rgba(226,0,116,0)'); g.fillStyle = hg; g.fillRect(512 - hw, base, hw * 2, 3); }
+  // Schriftzug: STUTTGART Buchstabe für Buchstabe, dann „VR“ als pinke Kapsel
+  const word = 'STUTTGART', sp = 10; g.font = '800 84px system-ui,sans-serif';
+  const ws = [...word].map(ch => g.measureText(ch).width), wordW = ws.reduce((s, w) => s + w, 0) + sp * (word.length - 1);
+  g.font = '800 58px system-ui,sans-serif'; const pillW = g.measureText('VR').width + 40, W = wordW + 24 + pillW;
+  let x = 512 - W / 2; const y = 334;
+  g.textBaseline = 'middle'; g.textAlign = 'left'; g.font = '800 84px system-ui,sans-serif'; g.fillStyle = '#fff';
+  [...word].forEach((ch, i) => {
+    const t = clamp((a - .55 - i * .055) / .35, 0, 1);
+    if (t > 0) { g.globalAlpha = t; g.fillText(ch, x, y + (1 - ease(t)) * 22); }
+    x += ws[i] + sp;
+  });
+  g.globalAlpha = 1;
+  const pt = clamp((a - 1.15) / .45, 0, 1);
+  if (pt > 0) {
+    const s = 1 + 2.70158 * (pt - 1) ** 3 + 1.70158 * (pt - 1) ** 2, cx = x - sp + 24 + pillW / 2;
+    g.save(); g.translate(cx, y); g.scale(s, s); g.globalAlpha = Math.min(1, pt * 2);
+    g.shadowColor = LOGO_PINK; g.shadowBlur = 22; rr(g, -pillW / 2, -38, pillW, 76, 38, LOGO_PINK); g.shadowBlur = 0;
+    tx(g, 'VR', 0, 2, 58, '#fff', 'center', 800); g.restore();
+  }
+  // feine Linie fährt unter dem Schriftzug auseinander
+  const lw = (W / 2 + 20) * k((a - 1.25) / .5);
+  if (lw > 1) { const lg = g.createLinearGradient(512 - lw, 0, 512 + lw, 0); lg.addColorStop(0, 'rgba(255,255,255,0)'); lg.addColorStop(.5, 'rgba(255,255,255,.55)'); lg.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = lg; g.fillRect(512 - lw, 392, lw * 2, 2); }
+  // „Suche nach Verbindung …“ mit Lade-Kreis
+  const st = k((a - 1.4) / .4);
+  if (st > 0) {
+    g.globalAlpha = st; g.font = '500 30px system-ui,sans-serif';
+    const txt = 'Suche nach Verbindung', bw = g.measureText(txt).width, dw = g.measureText('...').width, sx = 512 - (26 + 16 + bw + dw) / 2 + 13, sy = 452;
+    g.lineWidth = 4; g.lineCap = 'round'; g.strokeStyle = 'rgba(255,255,255,.15)'; g.beginPath(); g.arc(sx, sy, 12, 0, Math.PI * 2); g.stroke();
+    const a0 = a * 6.5; g.strokeStyle = LOGO_PINK; g.beginPath(); g.arc(sx, sy, 12, a0, a0 + 1.4 + Math.sin(a * 4) * .7); g.stroke();
+    g.fillStyle = '#c8c8d4'; g.textAlign = 'left'; g.textBaseline = 'middle'; g.fillText(txt + '.'.repeat(1 + Math.floor(a * 2.5) % 3), sx + 29, sy + 1);
+    g.globalAlpha = 1;
+  }
+  L.tex.needsUpdate = true;
 }
 // prüft regelmäßig, ob der Server wieder offen ist (dann neu laden); reopen = Admin öffnet ihn wieder
 function probeServer(reopen) {
@@ -4882,15 +4923,25 @@ function probeServer(reopen) {
 function updMaint(dt) {
   if (!maint.on) return; const t = (maint.t += dt); silence();
   if (!xrOn()) camera.rotation.set(desk.pitch, desk.yaw, 0);            // PC: umschauen geht noch (bewegen nicht)
-  if (t > M_MODELS && !maint.lists) { maint.lists = maintLists(); phoneG.visible = false; }
+  if (t > M_PLAYERS && !maint.gone) { maint.gone = true; hidePlayers(); }  // alle anderen Spieler auf einmal weg
+  if (t > M_GONE && !maint.lists) { maint.lists = maintLists(); phoneG.visible = false; }
   const L = maint.lists;
-  if (L) {
-    const nm = Math.floor(L.models.length * clamp((t - M_MODELS) / (M_GROUND - M_MODELS), 0, 1)); while (maint.hm < nm) L.models[maint.hm++].visible = false;   // Modelle verschwinden
-    const ng = Math.floor(L.ground.length * clamp((t - M_GROUND) / 2.5, 0, 1)); while (maint.hg < ng) L.ground[maint.hg++].visible = false;                // dann der Boden
-    if (t > M_GROUND && !maint.dark) { maint.dark = true; sky.visible = false; scene.background = new THREE.Color(0); scene.fog?.color.set(0); }      // Himmel schwarz, ferne Gebäude verschwinden im Dunkel
-    maint.shT -= dt; if (maint.shT <= 0 && t < M_BLUR + .5) { maint.shT = .3; sunLight.shadow.needsUpdate = true; }   // Schatten der verschwundenen Dinge auch weg
+  if (L && !maint.void) {                                                  // ganz schnell: Modelle, Boden und Himmel weg – nur die Gebäude bleiben
+    const nm = Math.floor(L.models.length * clamp((t - M_GONE) / .6, 0, 1)); while (maint.hm < nm) L.models[maint.hm++].visible = false;
+    const ng = Math.floor(L.ground.length * clamp((t - M_GONE - .3) / .5, 0, 1)); while (maint.hg < ng) L.ground[maint.hg++].visible = false;
+    if (t > M_GONE + .3 && !maint.dark) { maint.dark = true; sky.visible = false; scene.background = new THREE.Color(0); scene.fog?.color.set(0); }
+    maint.shT -= dt; if (maint.shT <= 0) { maint.shT = .15; sunLight.shadow.needsUpdate = true; }   // Schatten der verschwundenen Dinge auch weg
   }
-  if (t > M_BLUR) { blurFx.visible = true; blurFx.material.uniforms.opacity.value = ease(clamp((t - M_BLUR) / 1.5, 0, 1)); renderBlur(); }   // alles wird unscharf
+  if (t > M_DARK) {                                                        // dann wird es schwarz
+    fadeFx.visible = true; fadeFx.material.opacity = ease((t - M_DARK) / .7);
+    if (t > M_DARK + .75 && !maint.void) { maint.void = true; for (const o of scene.children) if (o !== dolly && !o.isLight) o.visible = false; }   // hinter dem Schwarz nichts mehr zeichnen
+  }
+  if (t > M_LOGO && !maint.logo) { maint.logo = maintLogo(); camera.add(maint.logo.m); }
+  if (maint.logo?.m.visible) {
+    const a = t - M_LOGO, fo = 1 - smooth(M_POPUP - M_LOGO - .15, M_POPUP - M_LOGO + .35, a);   // nach 3 s ausblenden, das Popup kommt
+    maint.logo.m.material.opacity = Math.min(1, a / .25) * fo; drawLogo(maint.logo, a);
+    if (fo <= 0) maint.logo.m.visible = false;
+  }
   if (t > M_POPUP && !maint.panel) { maint.panel = maintPanel(); camera.add(maint.panel); }
   if (maint.panel) {                                                       // Popup erscheint animiert (einblenden + leicht aufploppen), ohne Ton
     const k = Math.min(1, (t - M_POPUP) / .7), e = 1 + 2.70158 * (k - 1) ** 3 + 1.70158 * (k - 1) ** 2;
@@ -4901,15 +4952,12 @@ function updMaint(dt) {
 
 // ===================================================================
 // Hunger + Durst · Ware im Shop zum Greifen · Bezahlen mit dem Handy am NFC-Terminal
-//  - zwei Balken (Hunger, Durst) unten links im Blickfeld und auf dem Handy; sie sinken langsam
+//  - zwei Balken (Hunger, Durst) auf dem Handy; sie sinken langsam
 //  - Essen an den Mund halten = essen; Flasche kippen (Mund unten) = trinken, sonst läuft das Wasser auf den Boden
 //  - Ware aufs Band legen -> Terminal zeigt Summe + Kontostand -> Handy rausholen und ans NFC-Feld halten
 // ===================================================================
 const fmtEur = x => x.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' €';
 const NEED_FULL_S = { hunger: 1500, thirst: 1100 };                       // Sekunden von satt bis leer
-const [needC, needG] = C(256, 96), needTex = T(needC, false);
-const needHud = new THREE.Mesh(new THREE.PlaneGeometry(.2, .075), new THREE.MeshBasicMaterial({ map: needTex, transparent: true, depthTest: false, toneMapped: false }));
-needHud.renderOrder = 995; needHud.position.set(-.3, -.205, -.7); needHud.layers.set(OVERLAY); camera.add(needHud);
 function needIcon(g, kind, x, y) {
   g.save(); g.translate(x, y);
   if (kind === 'food') { g.fillStyle = '#e0a458'; g.beginPath(); g.ellipse(0, -3, 12, 8, 0, Math.PI, 0); g.fill(); g.fillStyle = '#6d3b1d'; g.fillRect(-12, -2, 24, 4); g.fillStyle = '#7cb342'; g.fillRect(-12, 2, 24, 3); g.fillStyle = '#e0a458'; g.beginPath(); g.ellipse(0, 6, 12, 4, 0, 0, Math.PI); g.fill(); }
@@ -4921,26 +4969,15 @@ function needBar(g, x, y, w, v, kind) {
   rr(g, x, y, w, 16, 8, 'rgba(255,255,255,.16)');
   if (v > .01) rr(g, x, y, Math.max(14, w * v), 16, 8, low ? (blink ? '#ff5252' : '#c62828') : kind === 'food' ? '#ffb300' : '#29b6f6');
 }
-let needKey = '';
-function drawNeeds() {
-  const h = save.hunger, t = save.thirst, key = Math.round(h * 100) + ',' + Math.round(t * 100) + ((h < .2 || t < .2) ? (Math.floor(time * 3) % 2 ? 'b' : 'a') : '');
-  if (key === needKey) return; needKey = key;
-  needG.clearRect(0, 0, 256, 96); rr(needG, 0, 0, 256, 96, 22, 'rgba(10,12,16,.55)');
-  needIcon(needG, 'food', 28, 28); needBar(needG, 54, 20, 184, h, 'food');
-  needIcon(needG, 'drink', 28, 68); needBar(needG, 54, 60, 184, t, 'drink');
-  needTex.needsUpdate = true;
-}
-let starveT = 0, needWarn = { h: 0, t: 0 };
+let starveT = 0, needWarn = { h: 0, t: 0 }, needPos = null;
 function updNeeds(dt) {
-  needHud.visible = !player.dead && !maint.on;
   if (player.dead) return;
-  const run = !seated() && Math.hypot(headWorld.x - (needHud.px ?? headWorld.x), headWorld.z - (needHud.pz ?? headWorld.z)) / Math.max(dt, .001) > 4 ? 1.5 : 1;   // rennen: schneller durstig
-  needHud.px = headWorld.x; needHud.pz = headWorld.z;
+  const run = needPos && !seated() && Math.hypot(headWorld.x - needPos.x, headWorld.z - needPos.z) / Math.max(dt, .001) > 4 ? 1.5 : 1;   // rennen: schneller durstig
+  (needPos ||= V()).copy(headWorld);
   save.hunger = Math.max(0, save.hunger - dt / NEED_FULL_S.hunger); save.thirst = Math.max(0, save.thirst - dt / NEED_FULL_S.thirst * run);
   if (save.hunger < .25 && time > needWarn.h) { needWarn.h = time + 90; msg('Du hast Hunger – im Supermarkt oder an der Tankstelle gibt es Essen', 4); uiTone(SND.ding); }
   if (save.thirst < .25 && time > needWarn.t) { needWarn.t = time + 90; msg('Du hast Durst – im Shop gibt es Getränke', 4); uiTone(SND.ding); }
   if (save.hunger <= 0 || save.thirst <= 0) { starveT += dt; if (starveT > 4) { starveT = 0; player.hp = Math.max(8, player.hp - 3); lastHurt = time; hurt = Math.max(hurt, .5); msg(save.thirst <= 0 ? 'Du verdurstest …' : 'Du verhungerst …', 2); } } else starveT = 0;
-  drawNeeds();
 }
 
 // ---------- Ware (kleine Modelle mit Vertexfarben, je eins ein Draw-Call) ----------
@@ -5405,20 +5442,10 @@ function delGallery(i) { const it = phone.gallery[i]; if (!it) return; phone.gal
 // Fahndung: wer ausraubt, bekommt Sterne – Streifenwagen mit Blaulicht und Sirene jagen dich
 // ===================================================================
 const wanted = { stars: 0, calm: 0, bustT: 0, cops: [], flash: 0 };
-const [stC, stG] = C(256, 56), stTex = T(stC, false);
-const starHud = new THREE.Mesh(new THREE.PlaneGeometry(.11, .024), new THREE.MeshBasicMaterial({ map: stTex, transparent: true, depthTest: false, toneMapped: false }));
-starHud.position.set(.13, .12, -.42); starHud.renderOrder = 996; starHud.visible = false; starHud.layers.set(OVERLAY); camera.add(starHud);
-function drawStar(g, x, y, r, col) { g.beginPath(); for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + i * Math.PI / 5, rr = i % 2 ? r * .45 : r; g.lineTo(x + Math.cos(a) * rr, y + Math.sin(a) * rr); } g.closePath(); g.fillStyle = col; g.fill(); g.lineWidth = 2; g.strokeStyle = 'rgba(0,0,0,.6)'; g.stroke(); }
-function drawStars() {
-  stG.clearRect(0, 0, 256, 56);
-  const fl = Math.floor(time * 3) % 2 && wanted.cops.length;
-  for (let i = 0; i < 5; i++) drawStar(stG, 28 + i * 50, 28, 22, i < wanted.stars ? (fl ? '#ffffff' : '#ffd21a') : 'rgba(255,255,255,.15)');
-  stTex.needsUpdate = true; starHud.visible = wanted.stars > 0;
-}
 function addWanted(n, why) {
   const before = wanted.stars; wanted.stars = clamp(wanted.stars + n, 0, 5); wanted.calm = 0;
   if (wanted.stars > before) { msg('FAHNDUNGSSTUFE ' + wanted.stars + (why ? ' – ' + why : ''), 3.5); playAt(SND.warn, headWorld, .7, 3); }
-  drawStars();
+  phone.drawT = 0;                                                         // Sterne stehen auf dem Handy
 }
 // Sirene: deutsches Martinshorn "Tatü-tata" (zwei Töne im Wechsel)
 function sirenVoice() {
@@ -5464,7 +5491,7 @@ function spawnCop() {
 function busted(by) {
   const fine = Math.min(Math.round(money), Math.max(100, Math.round(money * .25)));
   money -= fine; save.st.busted++;
-  wanted.stars = 0; wanted.bustT = 0; drawStars();
+  wanted.stars = 0; wanted.bustT = 0; phone.drawT = 0;
   while (wanted.cops.length) removeCop(wanted.cops.pop());
   if (player.inCar) pcar.speed = 0;
   if (job.id === 'crime') { msg('Mission gescheitert – festgenommen!', 3); job.stage = ''; setTimeout(() => job.id === 'crime' && nextJobTask(), 4000); }
@@ -5475,7 +5502,6 @@ function updCops(dt) {
   const want = wanted.stars ? Math.min(4, wanted.stars) : 0;
   while (wanted.cops.length < want) spawnCop();
   while (wanted.cops.length > want) removeCop(wanted.cops.pop());
-  if (Math.floor(time * 3) !== Math.floor((time - dt) * 3) && wanted.stars) drawStars();
   if (!wanted.stars) return;
   const me = player.inCar ? pcar.group.position : player.ride ? (rideCar()?.position || headWorld) : headWorld;
   const indoors = !seated() && flammables.some(f => f.hollow?.containsPoint(headWorld));   // im Gebäude versteckt: die Polizei sieht dich nicht
@@ -5502,7 +5528,7 @@ function updCops(dt) {
   if (wanted.bustT > (player.inCar ? 3 : 1.5)) { busted('der Polizei'); return; }
   // ohne Sichtkontakt verlierst du nach und nach die Sterne
   wanted.calm = seen ? 0 : wanted.calm + dt;
-  if (wanted.calm > 25) { wanted.calm = 0; wanted.stars--; drawStars(); msg(wanted.stars ? 'Fahndungsstufe ' + wanted.stars : 'Die Polizei hat dich verloren', 2.5); }
+  if (wanted.calm > 25) { wanted.calm = 0; wanted.stars--; phone.drawT = 0; msg(wanted.stars ? 'Fahndungsstufe ' + wanted.stars : 'Die Polizei hat dich verloren', 2.5); }
 }
 // Streifenwagen, die andere Spieler jagen (aus deren Zustand)
 function updRemoteCops(p, dt) {
@@ -6241,8 +6267,8 @@ function netConnect() {
   ws.onclose = () => {
     const was = net.online; net.online = false;
     if (phone.call) endCall();
+    if (maint.on) return;                                                    // Wartung: die Spieler verschwinden im Ablauf (updMaint); nicht neu verbinden (probeServer prüft)
     for (const p of net.players.values()) removePlayer(p); net.players.clear();
-    if (maint.on) return;                                                    // Wartung: nicht neu verbinden (probeServer prüft)
     if (was) msg('Verbindung zum Server verloren', 3);
     setTimeout(netConnect, 3000);
   };
@@ -7627,7 +7653,6 @@ function frame() {
   updWeather(dt); updMission(dt); updVillain(dt); updIntro(dt); updDisasters(dt);
   updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio(); updEmergency(dt); updNeeds(dt); updShop(dt); updMaint(dt);
   saveT -= dt; if (saveT <= 0) { saveT = 5; writeSave(); }
-  hud.visible = time < hudUntil;
   boomLight.intensity *= Math.pow(.02, dt); muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 120);
   tracerT -= dt; tracer.visible = tracerT > 0;
   sky.position.copy(headWorld);

@@ -27,7 +27,7 @@ node server.js
 - **Radio** und **Tanken** (an der Zapfsäule, PC: T) am Auto-Display · **Tuning-Werkstatt** an der 2. Tankstelle: Lack, Felgen, Neon und **Motor** (Stufe 1, Stufe 2, Turbo – schneller und mehr Sound)
 - **Chat**, **Immobilien** (Haus kaufen = eigener Startpunkt), **Tiere** (Hund Bello)
 - **Neue Autos**: Porsche 911, Jeep Grand Wagoneer, **Tesla Roadster** (200.000 € – am Auto-Display „Raumflug“: R-Trigger Schub, L-Trigger Bremse, linker Stick hoch/runter; PC: R/V) sowie **Polizei**, **Feuerwehr** (Wasserwerfer löscht Brände) und **Krankenwagen** mit Blaulicht + Sirene
-- **Hunger + Durst**: zwei Balken unten links und auf dem Handy. Im Supermarkt / an der Tankstelle Essen und Getränke vom Tisch greifen, aufs Kassenband legen, Handy rausholen und ans **NFC-Feld** halten (Liquid-Glass-Fenster mit Kontostand → Haken). Essen an den Mund = essen, Flasche kippen = trinken (PC: Q = aufheben, Maustaste halten = essen/trinken)
+- **Hunger + Durst**: zwei Balken auf dem Handy. Im Supermarkt / an der Tankstelle Essen und Getränke vom Tisch greifen, aufs Kassenband legen, Handy rausholen und ans **NFC-Feld** halten (Liquid-Glass-Fenster mit Kontostand → Haken). Essen an den Mund = essen, Flasche kippen = trinken (PC: Q = aufheben, Maustaste halten = essen/trinken)
 - **Türen + Kofferraum**: alle Autos haben greifbare Türgriffe (Jeep: 4 echte Türen, Porsche: 2, Roadster: beide Türen). Kofferraum am Griff hochziehen oder am Auto-Display „Kofferraum“ (PC: K) – Jetta/Polizei: Deckel, Jeep: Scheibe fährt runter, Klappe klappt runter
 - **Kofferraum als Stauraum**: Kofferraum öffnen, Essen/Getränke hineinlegen – sie fahren mit und bleiben gespeichert (auch nach dem Neuladen, je Auto)
 - **Displays**: jedes Auto hat ein Hauptdisplay und ein Mini-Display hinter dem Lenkrad (fehlen sie im Modell, werden sie sichtbar vor das Armaturenbrett gesetzt)
@@ -36,12 +36,13 @@ node server.js
 - **Handy im Auto vergessen**: A drücken – es fliegt zu deiner Hand. Mitfahrer hören das Radio des Fahrers
 - **Bank**: Kontostand, Geld an andere Spieler überweisen, letzte Buchungen
 - **Einstellungen**: Klingelton wählen (antippen = Vorschau). Eigene Töne: mp3-Dateien in `assets/klingeltoene/` legen
+- Keine Text-Einblendungen im Blickfeld – Geld, Hunger, Durst und Fahndungssterne stehen auf dem Handy.
 - Tag und Nacht (ein Tag = 40 Minuten). Geld, Haus, Hund, Tuning, Tank und Galerie werden gespeichert.
 
 ## Admin
 Wer sich **Gabriel** nennt, hat auf dem Handy die App **Admin Panel**: Tornado, Tsunami, NPC-Angriff, Gebäudebrand, Regen an/aus und „Alles stoppen“ – gilt für alle Spieler.
 - **Geld verschenken**: beliebig viel an jeden Spieler (oder sich selbst)
-- **Server herunterfahren** (mit Sicherheitsabfrage): bei allen friert die Welt ein, nach 5 s verschwinden die 3D-Modelle, dann Boden und Himmel (nur die Gebäude bleiben, man schwebt an seinem Platz), alles wird unscharf und „Service wurde geschlossen für Reparierung“ ploppt auf. Der Server bleibt zu, bis der Admin im Popup **A** (PC: Leertaste) drückt – dann laden alle automatisch neu.
+- **Server herunterfahren** (mit Sicherheitsabfrage): bei allen friert die Welt ein, die anderen Spieler sind auf einmal weg, dann verschwindet ganz schnell alles außer den Gebäuden. Danach wird es schwarz, die „Stuttgart VR“-Animation mit „Suche nach Verbindung …“ läuft 3 s, und „Service wurde geschlossen für Reparierung“ ploppt auf. Der Server bleibt zu, bis der Admin im Popup **A** (PC: Leertaste) drückt – dann laden alle automatisch neu.
 
 ## Ordner
 - `assets/` – alle 3D-Modelle, Texturen, Himmel, Klingelton und Sprachansagen (alles lokal, kein Internet nötig)
