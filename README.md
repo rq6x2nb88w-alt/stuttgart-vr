@@ -41,7 +41,7 @@ node server.js
 ## Admin
 Wer sich **Gabriel** nennt, hat auf dem Handy die App **Admin Panel**: Tornado, Tsunami, NPC-Angriff, Gebäudebrand, Regen an/aus und „Alles stoppen“ – gilt für alle Spieler.
 - **Geld verschenken**: beliebig viel an jeden Spieler (oder sich selbst)
-- **Server herunterfahren** (mit Sicherheitsabfrage): bei allen wird es 5 Sekunden schwarz, dann kommt „Service wurde geschlossen für Reparierung“. Der Server bleibt zu, bis der Admin im Popup **A** (PC: Leertaste) drückt – dann laden alle automatisch neu.
+- **Server herunterfahren** (mit Sicherheitsabfrage): bei allen friert die Welt ein, nach 5 s verschwinden die 3D-Modelle, dann Boden und Himmel (nur die Gebäude bleiben, man schwebt an seinem Platz), alles wird unscharf und „Service wurde geschlossen für Reparierung“ ploppt auf. Der Server bleibt zu, bis der Admin im Popup **A** (PC: Leertaste) drückt – dann laden alle automatisch neu.
 
 ## Ordner
 - `assets/` – alle 3D-Modelle, Texturen, Himmel, Klingelton und Sprachansagen (alles lokal, kein Internet nötig)

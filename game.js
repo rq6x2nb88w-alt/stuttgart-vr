@@ -284,7 +284,7 @@ function building(x, z, w, d, h, style, wall, opt = {}) {
   };
   const mx = mk(d), mz = mk(w), roof = M(opt.roof || 0x6f7174, { roughness: .95 });
   const m = new THREE.Mesh(BOX, [mx, mx, roof, roof, mz, mz]);
-  m.scale.set(w, h, d); m.position.set(x, h / 2, z); scene.add(m);
+  m.scale.set(w, h, d); m.position.set(x, h / 2, z); scene.add(m); m.userData.bld = true;   // bld = Gebäude (bleibt beim Server-Shutdown stehen)
   const ent = { kind: 'building', mesh: m }; m.userData.ent = ent; shootables.push(m);
   // begehbar (Schule, Supermarkt, Tankstellen-Shop): statt eines Klotzes Wände mit Tür – Innenraum kommt in buildInteriors()
   if (opt.enter) enterSpecs.push({ ent, x, z, w, d, h, kind: opt.enter, front: opt.front || [0, 1], kit, mx, mz, roof, wall, home: opt.home });
@@ -497,8 +497,9 @@ function updLights(dt) {
     const shaft = new THREE.Mesh(new THREE.CylinderGeometry(2.7, 5.4, 136, 32), concT); shaft.position.set(TVT.x, by + 68, TVT.z); scene.add(shaft);
     const basket = new THREE.Mesh(new THREE.CylinderGeometry(7.6, 6.6, 15, 32), concT); basket.position.set(TVT.x, by + 143, TVT.z); scene.add(basket);
     const win = new THREE.Mesh(new THREE.CylinderGeometry(7.7, 7.2, 5, 32, 1, true), M(0x1b2530, { metalness: .8, roughness: .1 })); win.position.set(TVT.x, by + 141, TVT.z); scene.add(win);
-    box(17, .6, 17, concT, TVT.x, by + 151, TVT.z).rotation.y = .4;
-    for (let i = 0; i < 8; i++) { const seg = new THREE.Mesh(new THREE.CylinderGeometry(.7 - i * .06, .75 - i * .06, 8, 12), M(i % 2 ? 0xffffff : 0xc81e1e)); seg.position.set(TVT.x, by + 155 + i * 8, TVT.z); scene.add(seg); }
+    const deck = box(17, .6, 17, concT, TVT.x, by + 151, TVT.z); deck.rotation.y = .4;
+    for (const o of [shaft, basket, win, deck]) o.userData.bld = true;      // der Turm zählt als Gebäude
+    for (let i = 0; i < 8; i++) { const seg = new THREE.Mesh(new THREE.CylinderGeometry(.7 - i * .06, .75 - i * .06, 8, 12), M(i % 2 ? 0xffffff : 0xc81e1e)); seg.position.set(TVT.x, by + 155 + i * 8, TVT.z); seg.userData.bld = true; scene.add(seg); }
     colliders.push({ minX: TVT.x - 5.5, maxX: TVT.x + 5.5, minZ: TVT.z - 5.5, maxZ: TVT.z + 5.5 });
     // kann angezündet werden (Feuerzeug unten am Turm): das Feuer frisst sich langsam nach oben
     addFlammable({ kind: 'building', tower: true, box: new THREE.Box3(new THREE.Vector3(TVT.x - 5.8, by, TVT.z - 5.8), new THREE.Vector3(TVT.x + 5.8, by + 158, TVT.z + 5.8)), mats: [concT], duration: 480 });
@@ -663,6 +664,7 @@ function buildInteriors() {
     const DH = S.kit ? 2.7 : 2.5, WALL = S.kind === 'school' ? 0xf2ead8 : 0xf3f1ec;
     const grp = new THREE.Group(), ext = new THREE.Group();
     for (const o of [grp, ext]) { o.position.set(S.x, y0, S.z); o.rotation.y = rot; scene.add(o); }
+    ext.userData.bld = true;                                              // Außenhülle der Läden = Gebäude
     const toW = (x, z) => V(x, 0, z).applyAxisAngle(UP, rot).add(V(S.x, 0, S.z));
     const col = (x0, x1, z0, z1) => { const a = toW(x0, z0), b = toW(x1, z1); colliders.push({ minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) }); };
     const vc = [], emi = [], tex = new Map(), etex = new Map();
@@ -4802,19 +4804,51 @@ function onMoney(p, m) {
   if (m.pay > 0) { money += m.pay; addTx('Von ' + p.name, m.pay); writeSave(); uiTone(SND.arrive); msg(p.name + ' hat dir ' + m.pay.toLocaleString('de-DE') + ' € überwiesen', 4); }
   if (m.gift > 0) { money += m.gift; addTx('Geschenk vom Admin', m.gift); writeSave(); uiTone(SND.arrive); msg('Der Admin hat dir ' + m.gift.toLocaleString('de-DE') + ' € geschenkt!', 4); }
 }
-// ---------- Server herunterfahren: bei allen 5 s schwarz, dann "Service wurde geschlossen für Reparierung" ----------
+// ---------- Server herunterfahren: Ablauf bei allen Spielern ----------
+//  0 s   alles friert ein (NPCs, Animationen, Autos), Stille
+//  5 s   die 3D-Modelle verschwinden nach und nach (erst die nahen)
+//  10 s  der Boden verschwindet, der Himmel wird schwarz – du schwebst an deinem Platz, nur die Gebäude stehen noch
+//  12,5 s alles wird unscharf (Blur)
+//  14 s  das Fenster "Service wurde geschlossen für Reparierung" ploppt animiert auf
 const maint = { on: false, t: 0, panel: null, probeT: 0 };
+const M_MODELS = 5, M_GROUND = 10, M_BLUR = 12.5, M_POPUP = 14;
+// Unschärfe: die Welt wird in ein winziges Bild gerendert und vergrößert vor die Augen gelegt (geht auch in VR)
+const blurRT = new THREE.WebGLRenderTarget(128, 128); blurRT.texture.colorSpace = THREE.SRGBColorSpace;
+const blurCam = new THREE.PerspectiveCamera(120, 1, .1, 4000);
+const blurFx = new THREE.Mesh(new THREE.PlaneGeometry(1.75, 1.75), new THREE.ShaderMaterial({          // weicher Gauß-Weichzeichner (7×7)
+  uniforms: { map: { value: blurRT.texture }, opacity: { value: 0 }, texel: { value: 1.7 / 128 } },
+  vertexShader: 'varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: 'uniform sampler2D map; uniform float opacity; uniform float texel; varying vec2 vUv;\nvoid main() { vec3 c = vec3(0.0); float w = 0.0;\n for (int x = -3; x <= 3; x++) for (int y = -3; y <= 3; y++) { float k = exp(-float(x * x + y * y) / 6.0); c += texture2D(map, vUv + vec2(float(x), float(y)) * texel).rgb * k; w += k; }\n gl_FragColor = vec4(c / w, opacity); }',
+  transparent: true, depthTest: false, depthWrite: false }));
+blurFx.position.z = -.5; blurFx.renderOrder = 1000; blurFx.layers.set(OVERLAY); blurFx.visible = false; camera.add(blurFx);
+function renderBlur() {
+  camera.updateMatrixWorld(true); camera.matrixWorld.decompose(blurCam.position, blurCam.quaternion, v1); blurCam.updateMatrixWorld(true);
+  const xr = renderer.xr.enabled, prev = renderer.getRenderTarget(); renderer.xr.enabled = false;
+  try { renderer.setRenderTarget(blurRT); renderer.render(scene, blurCam); } finally { renderer.setRenderTarget(prev); renderer.xr.enabled = xr; }
+}
+// welche Teile der Welt verschwinden: erst alle Modelle (Autos, Menschen, Bäume, Schilder …), dann der Boden; Gebäude bleiben
+function maintLists() {
+  const groundMats = new Set(Object.values(MAT)), models = [], ground = [...terrainMesh.children];
+  const isBld = o => { let b = !!o.userData.bld; if (!b) o.traverse(c => { if (c.userData.bld) b = true; }); return b; };
+  const isGround = o => { let g = false; o.traverse(c => { if (c.isMesh && !Array.isArray(c.material) && groundMats.has(c.material)) g = true; }); return g; };
+  for (const o of scene.children) {
+    if (o === dolly || o.isLight || o === sunLight.target || o === terrainMesh || o === sky || !o.visible || isBld(o)) continue;
+    (isGround(o) ? ground : models).push(o);
+  }
+  for (const o of models) o.userData.mk = (o.isInstancedMesh || o.isPoints ? 300 : o.getWorldPosition(v1).distanceTo(headWorld)) * rand(.4, 1.6);
+  models.sort((a, b) => a.userData.mk - b.userData.mk); ground.sort(() => Math.random() - .5);
+  return { models, ground };
+}
 const wsURL = () => (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
 function serverShutdown() {
   if (!isAdmin()) return;
   if (net.online) netSend({ t: 'shutdown' }); else onShutdown();
 }
 function onShutdown() {
-  if (maint.on) return; maint.on = true; maint.t = 0;
-  intro = { t: 99 }; fadeFx.visible = true; fadeFx.material.opacity = 1;   // alles schwarz
-  for (const o of scene.children) if (o !== dolly) o.visible = false;      // Welt ausblenden (auch in VR: schwarz statt eingefroren)
-  scene.background = new THREE.Color(0); scene.fog = null; hud.visible = false; hudUntil = 0; phoneG.visible = false;
-  document.getElementById('cross')?.style.setProperty('display', 'none'); try { document.exitPointerLock(); } catch (e) { }
+  if (maint.on) return; Object.assign(maint, { on: true, t: 0, lists: null, hm: 0, hg: 0, dark: false, shT: 0 });   // ab jetzt läuft die Welt nicht mehr weiter (eingefroren)
+  intro = { t: 99 }; fadeFx.visible = false; fadeFx.material.opacity = 0;
+  hud.visible = false; hudUntil = 0; needHud.visible = false; tagSpr.visible = false;
+  document.getElementById('cross')?.style.setProperty('display', 'none');
   ring.pause(); radio.on = false; if (phone.call) endCall(); phone.gallery.forEach(it => it.vid?.pause());
   silence();
   net.online = false; try { net.ws?.close(); } catch (e) { }
@@ -4843,14 +4877,23 @@ function probeServer(reopen) {
   setTimeout(() => { try { ws.close(); } catch (e) { } }, 8000);
 }
 function updMaint(dt) {
-  if (!maint.on) return; maint.t += dt;
-  fadeFx.visible = true; fadeFx.material.opacity = 1; silence();
-  if (maint.t > 5 && !maint.panel) { maint.panel = maintPanel(); camera.add(maint.panel); }
+  if (!maint.on) return; const t = (maint.t += dt); silence();
+  if (!xrOn()) camera.rotation.set(desk.pitch, desk.yaw, 0);            // PC: umschauen geht noch (bewegen nicht)
+  if (t > M_MODELS && !maint.lists) { maint.lists = maintLists(); phoneG.visible = false; }
+  const L = maint.lists;
+  if (L) {
+    const nm = Math.floor(L.models.length * clamp((t - M_MODELS) / (M_GROUND - M_MODELS), 0, 1)); while (maint.hm < nm) L.models[maint.hm++].visible = false;   // Modelle verschwinden
+    const ng = Math.floor(L.ground.length * clamp((t - M_GROUND) / 2.5, 0, 1)); while (maint.hg < ng) L.ground[maint.hg++].visible = false;                // dann der Boden
+    if (t > M_GROUND && !maint.dark) { maint.dark = true; sky.visible = false; scene.background = new THREE.Color(0); scene.fog?.color.set(0); }      // Himmel schwarz, ferne Gebäude verschwinden im Dunkel
+    maint.shT -= dt; if (maint.shT <= 0 && t < M_BLUR + .5) { maint.shT = .3; sunLight.shadow.needsUpdate = true; }   // Schatten der verschwundenen Dinge auch weg
+  }
+  if (t > M_BLUR) { blurFx.visible = true; blurFx.material.uniforms.opacity.value = ease(clamp((t - M_BLUR) / 1.5, 0, 1)); renderBlur(); }   // alles wird unscharf
+  if (t > M_POPUP && !maint.panel) { maint.panel = maintPanel(); camera.add(maint.panel); }
   if (maint.panel) {                                                       // Popup erscheint animiert (einblenden + leicht aufploppen), ohne Ton
-    const k = Math.min(1, (maint.t - 5) / .7), e = 1 + 2.70158 * (k - 1) ** 3 + 1.70158 * (k - 1) ** 2;
+    const k = Math.min(1, (t - M_POPUP) / .7), e = 1 + 2.70158 * (k - 1) ** 3 + 1.70158 * (k - 1) ** 2;
     maint.panel.scale.setScalar(.55 + .45 * e); maint.panel.material.opacity = Math.min(1, k * 1.8); maint.panel.position.y = -.05 * (1 - ease(k));
   }
-  maint.probeT -= dt; if (maint.t > 8 && maint.probeT <= 0) { maint.probeT = 10; probeServer(false); }
+  maint.probeT -= dt; if (t > M_POPUP + 3 && maint.probeT <= 0) { maint.probeT = 10; probeServer(false); }
 }
 
 // ===================================================================
@@ -7392,14 +7435,14 @@ function buildFacadeMesh(atlas) {
     if (!s.house) roofG.push(new THREE.PlaneGeometry(s.w, s.d).rotateX(-Math.PI / 2).translate(s.x, s.h, s.z));
   }
   // alle Dächer zusammenfassen: 2 Draw-Calls statt ~250
-  scene.add(freezeObj(shade(new THREE.Mesh(mergeGeometries(roofG), M(0x6f7174, { roughness: .95 })))));
+  { const rm = new THREE.Mesh(mergeGeometries(roofG), M(0x6f7174, { roughness: .95 })); rm.userData.bld = true; scene.add(freezeObj(shade(rm))); }
   const cones = houseRoofs.map(r => {
     r.updateMatrixWorld(); const gg = r.geometry.clone().applyMatrix4(r.matrixWorld).toNonIndexed();
     const cc = r.material.color.clone().lerp(new THREE.Color(1, 1, 1), .5), ca = new Float32Array(gg.attributes.position.count * 3);
     for (let i = 0; i < ca.length; i += 3) { ca[i] = cc.r; ca[i + 1] = cc.g; ca[i + 2] = cc.b; }
     gg.setAttribute('color', new THREE.BufferAttribute(ca, 3)); r.material = HIDDEN; return gg;
   });
-  if (cones.length) scene.add(freezeObj(shade(new THREE.Mesh(mergeGeometries(cones), roofTileMat))));
+  if (cones.length) { const cm = new THREE.Mesh(mergeGeometries(cones), roofTileMat); cm.userData.bld = true; scene.add(freezeObj(shade(cm))); }
   // PBR: echtes Licht, Schatten, Fenster spiegeln den Himmel
   const mat = new THREE.MeshStandardMaterial({ map: atlas.albedo, normalMap: atlas.normal, roughnessMap: atlas.rough, metalness: 0, vertexColors: true, envMapIntensity: 1.3 });
   let tris = 0;
@@ -7410,7 +7453,7 @@ function buildFacadeMesh(atlas) {
     g.setAttribute('color', new THREE.Float32BufferAttribute(ch.col, 3));
     g.computeVertexNormals(); g.computeBoundingSphere();
     for (const s of ch.specs) s.ent.fl.facade.attr = g.attributes.color;   // zum Schwärzen bei Feuer
-    const mesh = new THREE.Mesh(g, mat); mesh.castShadow = mesh.receiveShadow = true; scene.add(freezeObj(mesh));
+    const mesh = new THREE.Mesh(g, mat); mesh.castShadow = mesh.receiveShadow = true; mesh.userData.bld = true; scene.add(freezeObj(mesh));
     tris += ch.pos.length / 9;
   }
   facadeColors = true;
