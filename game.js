@@ -4320,6 +4320,9 @@ const fadeFx = new THREE.Mesh(new THREE.SphereGeometry(.25, 16, 12), new THREE.M
 fadeFx.renderOrder = 999; camera.add(fadeFx);
 // Einblendungen (Hinweise, roter Rand, Vignette) nur im eigenen Sichtfeld – nicht im Handy-Video
 const OVERLAY = 5; camera.layers.enable(OVERLAY); for (const o of [hud, deathFx, fadeFx, vignette]) o.layers.set(OVERLAY);
+vignette.layers.set(7);                                                  // Komfort-Rand bleibt aus (war in VR nie sichtbar – soll so bleiben, nicht dunkler werden)
+// three.js r160: in VR zeichnen die Augen-Kameras nur ihre eigenen Ebenen -> Einblendungen (Hinweise, Balken, Blur, Popup) dort freischalten
+function xrOverlay() { const xc = renderer.xr.getCamera(); xc.layers.enable(OVERLAY); for (const c of xc.cameras || []) c.layers.enable(OVERLAY); }
 let intro = null;
 function startIntro() {
   if (intro) return; intro = { t: 0 };
@@ -7554,6 +7557,7 @@ renderer.setAnimationLoop(() => {
 function frame() {
   if (PROF.on) { profT = performance.now(); PROF.n++; }
   const dt = Math.min(clock.getDelta(), .05); time += dt;
+  if (xrOn()) xrOverlay();
   if (maint.on) { if (xrOn()) { pollPads(); vrInput(dt); } updMaint(dt); return; }   // Wartung: nur Schwarz + Popup, sonst läuft nichts
   camera.getWorldPosition(headWorld);
   if (xrOn()) { pollPads(); if (!player.dead) { vrInput(dt); useTools(dt); } }
