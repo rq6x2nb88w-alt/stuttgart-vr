@@ -58,7 +58,7 @@ export class Lobby {
     } else if (['s', 'ev', 'npc', 'scr'].includes(msg.t)) {
       msg.from = me.id; this.broadcast(JSON.stringify(msg), ws);
     } else if (msg.t === 'sig') {
-      if (msg.gift && !this.isAdmin(me)) return;                          // Geld verschenken darf nur der Admin
+      if ((msg.gift || msg.zero) && !this.isAdmin(me)) return;            // Geld verschenken / auf 0 setzen darf nur der Admin
       const to = this.ctx.getWebSockets().find(w => this.info(w).id === msg.to);
       if (to) { msg.from = me.id; this.send(to, JSON.stringify(msg)); }
     }

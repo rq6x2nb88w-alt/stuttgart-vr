@@ -841,7 +841,7 @@ function buildInteriors() {
     { const a = toW(-ix + .1, -iz + .1), b = toW(ix - .1, iz - .1); S.ent.fl.hollow = new THREE.Box3(V(Math.min(a.x, b.x), y0, Math.min(a.z, b.z)), V(Math.max(a.x, b.x), y0 + H, Math.max(a.z, b.z))); }
     grp.updateMatrixWorld(true);
     for (const L of lanesHere) { L.pad = L.tilt.localToWorld(V(0, -.125, .03)); L.padN = V(0, 0, 1).transformDirection(L.tilt.matrixWorld); L.cx = (L.zone.minX + L.zone.maxX) / 2; L.cz = (L.zone.minZ + L.zone.maxZ) / 2; }
-    interiors.push({ kind: S.kind, x: S.x, z: S.z, grp, door: sd.c, lanes: lanesHere, hollow: S.ent.fl.hollow, y0 });
+    interiors.push({ kind: S.kind, x: S.x, z: S.z, grp, door: sd.c, lanes: lanesHere, hollow: S.ent.fl.hollow, y0, toW, rot });
   }
 }
 buildInteriors();
@@ -1107,7 +1107,7 @@ async function getVehicle(id) {
     dashRemove();                                                        // ... und keine Dashcam
     const s = buildScooter(); shade(s);
     setVehicleVisual(s, s);
-    Object.assign(pcar, { half: V(.3, 1.2, .5), wheels: [], head: V(0, 1.6, -.05), seatHint: V(0, 1.2, 0), exitPos: V(.9, 0, 0), doors: [], seats: [V(0, 1.6, -.05)], screen: null, cluster: null, rainFx: null, doorGlass: null, wins: null, winT: null, dmg: null, dents: [], crack: null });
+    Object.assign(pcar, { half: V(.3, 1.2, .5), wheels: [], head: V(0, 1.6, -.05), seatHint: V(0, 1.2, 0), exitPos: V(.9, 0, 0), doors: [], trunk: null, seats: [V(0, 1.6, -.05)], screen: null, cluster: null, rainFx: null, doorGlass: null, wins: null, winT: null, dmg: null, dents: [], crack: null });
     pcar.hit.scale.set(.5, 1.2, 1); pcar.hit.position.y = .6; vehicleCache.scooter = s.clone(true);
   } else {
     try { const g = await loadVehicleModel(v); upgradePlayerCar(g, v.id); }
@@ -1781,6 +1781,7 @@ function icon(g, kind, x, y, s = 1) {
   if (kind === 'money') { g.beginPath(); g.roundRect(-26, -15, 52, 30, 5); g.fill(); g.fillStyle = '#1b5e20'; g.beginPath(); g.arc(0, 0, 9, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('€', 0, 1); }
   if (kind === 'power') { g.lineWidth = 5; g.beginPath(); g.arc(0, 2, 17, -Math.PI * .3, Math.PI * 1.3); g.stroke(); g.beginPath(); g.moveTo(0, -22); g.lineTo(0, 2); g.stroke(); }
   if (kind === 'jet') { g.beginPath(); g.moveTo(0, -26); g.quadraticCurveTo(14, -10, 11, 12); g.lineTo(-11, 12); g.quadraticCurveTo(-14, -10, 0, -26); g.fill(); g.fillStyle = '#00838f'; g.beginPath(); g.arc(0, -6, 5, 0, 7); g.fill(); g.fillStyle = '#ffb300'; g.beginPath(); g.moveTo(-7, 14); g.lineTo(7, 14); g.lineTo(0, 28); g.closePath(); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(-11, 4); g.lineTo(-19, 14); g.lineTo(-11, 12); g.fill(); g.beginPath(); g.moveTo(11, 4); g.lineTo(19, 14); g.lineTo(11, 12); g.fill(); }
+  if (kind === 'trunk') { g.beginPath(); g.moveTo(-26, 12); g.lineTo(-26, 2); g.lineTo(-14, -6); g.lineTo(10, -6); g.lineTo(18, 2); g.lineTo(26, 2); g.lineTo(26, 12); g.closePath(); g.fill(); g.lineWidth = 5; g.beginPath(); g.moveTo(18, 2); g.lineTo(28, -18); g.stroke(); g.fillStyle = '#6d4c41'; for (const x of [-15, 15]) { g.beginPath(); g.arc(x, 13, 6, 0, 7); g.fill(); } }
   if (kind === 'hose') { g.lineWidth = 6; g.beginPath(); g.moveTo(-22, 16); g.lineTo(0, 16); g.lineTo(14, 2); g.stroke(); g.fillStyle = '#fff'; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(14 + i * 4, 2 - i * 3 + (i * i) * .45, 3, 0, 7); g.fill(); } g.beginPath(); g.arc(-22, 16, 5, 0, 7); g.fill(); }
   if (kind === 'siren') { g.fillStyle = '#ff2a2a'; g.beginPath(); g.arc(-8, 2, 10, Math.PI, 0); g.fill(); g.fillStyle = '#2a6bff'; g.beginPath(); g.arc(10, 2, 10, Math.PI, 0); g.fill(); g.fillStyle = '#fff'; g.fillRect(-22, 4, 44, 8); }
   g.restore();
@@ -1880,7 +1881,7 @@ function drawApp() {
      ['fire', 'fire', 'Gebäude anzünden', 'ein Haus in der Nähe brennt', '#b34700'],
      ['rain', 'rain', weather.target ? 'Regen ausschalten' : 'Regen einschalten', weather.target ? 'es regnet gerade' : 'es ist gerade trocken', '#2b5d9b'],
      ['stop', 'stop', 'Alles stoppen', 'Tornado, Tsunami, Angriff beenden', '#444a55'],
-     ['money', 'money', 'Geld verschenken', 'beliebig viel an Spieler (oder dich)', '#1b5e20'],
+     ['money', 'money', 'Geld verwalten', 'Geld geben oder Konto auf 0 setzen', '#1b5e20'],
      ['power', 'shutdown', 'Server herunterfahren', 'Wartung: Spiel für alle schließen', '#263238']].forEach(([ic, act, n, sub, c], i) => {
       const y = 160 + i * 62;
       rr(g, 14, y, PW - 28, 56, 14, c); g.beginPath(); g.arc(44, y + 28, 20, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, ic, 44, y + 28, .6);
@@ -1899,14 +1900,15 @@ function drawApp() {
     }
   } else if (a === 'admmoney') {
     // Admin: Geld verschenken (Betrag wählen, dann Spieler antippen)
-    rr(g, 0, 56, PW, 80, 0, '#1b5e20'); tx(g, 'Geld verschenken', 24, 88, 28, '#fff', 'left', 800); tx(g, 'Admin · kommt sofort aufs Konto', 24, 118, 13, '#c8e6c9', 'left', 500);
+    rr(g, 0, 56, PW, 80, 0, '#1b5e20'); tx(g, 'Geld verschenken', 24, 88, 28, '#fff', 'left', 800); tx(g, 'Geben = Betrag dazu · 0 € = Konto leeren', 24, 118, 13, '#c8e6c9', 'left', 500);
     ADM_STEPS.forEach((v, i) => { const x = 10 + i * 68, on = bank.admAmt === v; rr(g, x, 148, 64, 40, 12, on ? '#43a047' : '#263238'); tx(g, v >= 1e6 ? '1 Mio' : v.toLocaleString('de-DE'), x + 32, 168, v >= 1e5 ? 12 : 14, '#fff', 'center', 800); btn(x, 148, 64, 40, 'aamt:' + i); });
     tx(g, 'Betrag: ' + bank.admAmt.toLocaleString('de-DE') + ' €', PW / 2, 210, 18, '#a5d6a7', 'center', 700);
     [{ id: -1, name: 'Ich selbst' }, ...[...net.players.values()].slice(0, 6)].forEach((p, i) => {
       const y = 232 + i * 64;
       rr(g, 14, y, PW - 28, 56, 14, '#1e2129'); rr(g, 26, y + 10, 36, 36, 18, i ? '#e20074' : '#b3001b'); tx(g, p.name[0].toUpperCase(), 44, y + 28, 18);
-      tx(g, p.name.slice(0, 18), 74, y + 28, 17, '#fff', 'left', 600);
-      rr(g, PW - 110, y + 10, 84, 36, 12, '#2e7d32'); tx(g, 'Geben', PW - 68, y + 28, 15, '#fff', 'center', 800); btn(14, y, PW - 28, 56, 'gift:' + p.id);
+      tx(g, p.name.slice(0, 13), 74, y + 28, 16, '#fff', 'left', 600);
+      rr(g, PW - 178, y + 10, 64, 36, 12, '#b71c1c'); tx(g, '0 €', PW - 146, y + 28, 15, '#fff', 'center', 800); btn(PW - 182, y, 72, 56, 'zero:' + p.id);   // Konto auf 0 setzen
+      rr(g, PW - 104, y + 10, 78, 36, 12, '#2e7d32'); tx(g, 'Geben', PW - 65, y + 28, 15, '#fff', 'center', 800); btn(PW - 108, y, 94, 56, 'gift:' + p.id);
     });
     if (!net.players.size) tx(g, 'Sonst ist gerade niemand online', PW / 2, 318, 14, '#90a4ae');
     rr(g, 14, PH - 104, PW - 28, 46, 14, '#37474f'); tx(g, '← Admin Panel', PW / 2, PH - 81, 17, '#fff', 'center', 700); btn(14, PH - 104, PW - 28, 46, 'app:admin');
@@ -2129,6 +2131,7 @@ function phoneAction(a) {
   if (a.startsWith('adm:')) { adminAction(a.slice(4)); return; }
   if (a.startsWith('aamt:')) { bank.admAmt = ADM_STEPS[+a.slice(5)]; return; }
   if (a.startsWith('gift:')) { adminGive(+a.slice(5)); return; }
+  if (a.startsWith('zero:')) { adminZero(+a.slice(5)); return; }
   if (a.startsWith('bamt:')) { bank.amt = BANK_STEPS[+a.slice(5)]; return; }
   if (a.startsWith('pay:')) { transfer(+a.slice(4)); return; }
   if (a.startsWith('ring:')) { const r = RINGS[+a.slice(5)]; if (r) { ring.preview(r); writeSave(); } return; }
@@ -2563,6 +2566,7 @@ function carAction(a) {
   if (a === 'siren') { setSiren(!job.siren); return; }
   if (a === 'jet') { jetOn(); return; }
   if (a === 'hose') { setHose(!job.hose); return; }
+  if (a === 'trunk') { toggleTrunk(); return; }
   if (a === 'fuel') { startFuel(); return; }
   if (a.startsWith('tn:')) { const [, k, i] = a.split(':'); buyTune(k, +i); return; }
   if (a.startsWith('app:')) {
@@ -2581,7 +2585,7 @@ function localCarView() {
   return { btns: cp.btns, conn: cp.conn, app: cp.app, call: phone.call, callMin: cp.callMin, locked: pcar.locked, appT: cp.appT, name: net.name, veh: vehicle.name,
     players: [...net.players.values()], nav, speed: Math.abs(pcar.speed), pos: pcar.group.position, heading: pcar.heading, alert: cp.alert, banner: cp.banner, ripple: cp.ripple,
     radio: radio.on ? radio.st : -1, vol: save.vol, fuel: save.fuel, canFuel: canFuel(), filling: fuelInfo.filling, onPad: onPad(), police: canSiren(), siren: job.siren, tune: save.tune[vehicle.id] || {}, local: true,
-    jet: vehicle.id === 'roadster', jetOn: !!pcar.jet?.on, emerg: vehicle.emerg || '', hose: !!job.hose };
+    jet: vehicle.id === 'roadster', jetOn: !!pcar.jet?.on, emerg: vehicle.emerg || '', hose: !!job.hose, trunk: !!pcar.trunk && vehicle.type !== 'scooter', trunkOpen: (pcar.trunk?.anim ?? pcar.trunk?.a ?? 0) > .15 };
 }
 // Text auf mehrere Zeilen umbrechen
 function wrapText(g, s, maxW) { const out = []; let line = ''; for (const w of s.split(' ')) { const t = line ? line + ' ' + w : w; if (g.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t; } if (line) out.push(line); return out; }
@@ -2685,13 +2689,14 @@ function drawCarView(g, W) {
     if (W.police) tiles.push(['siren', W.siren ? 'Sirene aus' : 'Sirene an', W.siren ? '#c62828' : '#1e5bd8']);
     if (W.jet) tiles.push(['jet', W.jetOn ? 'Raumflug aus' : 'Raumflug', W.jetOn ? '#c62828' : '#00838f']);
     if (W.emerg === 'fire') tiles.push(['hose', W.hose ? 'Wasser aus' : 'Wasserwerfer', W.hose ? '#c62828' : '#0277bd']);
-    const tw = tiles.length > 4 ? 96 : tiles.length > 3 ? 120 : 150, gap = tiles.length > 4 ? 14 : tiles.length > 3 ? 18 : 20;
+    if (W.trunk) tiles.push(['trunk', W.trunkOpen ? 'Kofferraum zu' : 'Kofferraum', '#6d4c41']);
+    const tw = tiles.length > 5 ? 84 : tiles.length > 4 ? 96 : tiles.length > 3 ? 120 : 150, gap = tiles.length > 5 ? 10 : tiles.length > 4 ? 14 : tiles.length > 3 ? 18 : 20;
     tiles.forEach(([id, n, c], i) => {
       const k = ease((time - W.appT - i * .08) / .3), x = cx - (tiles.length * (tw + gap) - gap) / 2 + i * (tw + gap), y = 110 + (1 - k) * 20;
-      g.globalAlpha = Math.max(0, k) * (W.conn || id === 'radio' || id === 'siren' || id === 'jet' || id === 'hose' ? 1 : .35); rr(g, x, y, tw, tw, 30, c);
+      g.globalAlpha = Math.max(0, k) * (W.conn || id === 'radio' || id === 'siren' || id === 'jet' || id === 'hose' || id === 'trunk' ? 1 : .35); rr(g, x, y, tw, tw, 30, c);
       if (id === 'tel') icon(g, 'tel', x + tw / 2, y + tw / 2, 1.4); else if (id === 'map') navArrow(g, 'gerade', x + tw / 2, y + tw / 2 + 4, 1.5); else icon(g, id, x + tw / 2, y + tw / 2, tw < 110 ? 1.2 : 1.5);
       tx(g, n, x + tw / 2, y + tw + 26, tiles.length > 3 ? 14 : 17, '#fff', 'center', 600); g.globalAlpha = 1;
-      cbtn(x, y, tw, tw + 40, id === 'siren' || id === 'jet' || id === 'hose' ? id : 'app:' + id);
+      cbtn(x, y, tw, tw + 40, id === 'siren' || id === 'jet' || id === 'hose' || id === 'trunk' ? id : 'app:' + id);
     });
   } else if (W.app === 'tel') {
     tx(g, 'Telefon', X0 + 20, 36, 24, '#fff', 'left', 700); tx(g, 'Spieler online – antippen zum Anrufen', X0 + 20, 62, 13, '#99a', 'left', 500);
@@ -3086,6 +3091,7 @@ function updPlayerCar(dt) {
     d.pivot.rotation.y = -d.side * d.a;
     doorSound(d, d.a, d.handle, dt, s => slamCar(c.sus || (c.sus = {}), d.side, s));   // Tür auf: Klacken, zu: dumpfer Schlag + Auto wippt
   }
+  if (!sc && c.trunk) updTrunk(c, ch, dt);
   if (!sc) updWindows(dt);
   let thr = 0, brk = 0, stx = 0;
   if (player.inCar && !c.dead) {
@@ -3361,6 +3367,26 @@ function updSlideDoors(dt) {
   }
 }
 
+// ---------- Kofferraum: am Griff hochziehen (bzw. Heckklappe runterklappen), am Display / PC: K auf und zu ----------
+function updTrunk(c, ch, dt) {
+  const T = c.trunk;
+  if (T.grab) {
+    const l = ch.worldToLocal(T.grab.ctrl.getWorldPosition(v1)), pv = T.pivot.position, th = Math.atan2(l.y - pv.y, -(l.z - pv.z));
+    T.a = clamp(T.drop ? T.a0 - th : th - T.a0, 0, T.max); T.anim = undefined;
+  } else if (T.anim !== undefined) { T.a += clamp(T.anim - T.a, -dt * 1.5, dt * 1.5); if (Math.abs(T.a - T.anim) < 1e-3) T.anim = undefined; }
+  else if (Math.abs(c.speed) > 3) T.a = Math.max(0, T.a - dt * 1.5);   // beim schnellen Fahren fällt er zu
+  setTrunkPose(T.pivot, T.glassG, T.a, T.drop, T.glassH);
+  doorSound(T, T.a, T.handle, dt, s => slamCar(c.sus || (c.sus = {}), 0, s));
+}
+// a = 0 (zu) .. max (offen); Jeep: zuerst fährt die Scheibe in die Klappe, dann klappt sie nach unten
+function setTrunkPose(pivot, glassG, a, drop, glassH) {
+  if (drop) { if (glassG) glassG.position.y = -Math.min(1, a / .4) * glassH; pivot.rotation.x = -Math.max(0, a - .4) * 1.36; }
+  else pivot.rotation.x = a;
+}
+function toggleTrunk() {
+  const T = pcar.trunk; if (!T || vehicle.type === 'scooter') { msg('Dieses Auto hat keinen Kofferraum zum Öffnen', 2); return; }
+  T.anim = T.a > .15 ? 0 : T.max; msg(T.anim ? 'Kofferraum geht auf' : 'Kofferraum geht zu', 1.5);
+}
 // ---------- Türen: Klacken beim Öffnen, dumpfes Zuschlagen ----------
 // onSlam(stärke 0..1): Tür ist zugefallen -> Auto wippt kurz in den Stoßdämpfern
 function doorSound(st, a, obj, dt, onSlam) {
@@ -3868,19 +3894,22 @@ function tryGrab(h) {
   if (phone.where === 'holder' && phoneG.getWorldPosition(v1).distanceTo(p) < .15) { setPhone('hand'); phone.cool = time + 1.5; return; }
   if (dashGrab(h, p)) return;                                            // heruntergefallene Dashcam aufheben
   { const itg = nearestItem(p, .22); if (itg) { holdItem(itg, h); return; } }   // Essen / Getränke aus dem Regal nehmen
+  { const cg = nearestCartHandle(p, .16); if (cg) { h.held = { type: 'cart', cart: cg }; cg.held = h; haptic(h, .3, 40); return; } }   // Einkaufswagen am Griff schieben
   if (!seated() && !rob.spot) { const s = robNear(p, .55); if (s) { h.held = { type: 'rob' }; robStart(s, h); haptic(h, .5, 60); return; } }   // Kasse/Automat ausrauben (Grip halten)
   let best = null, bd = .25;
   for (const t of TOOLS) { if (t.heldBy) continue; const d = t.obj.getWorldPosition(v1).distanceTo(p); if (d < bd) { bd = d; best = t; } }
   if (best) return holdTool(best, h);
   // Tür am echten Türgriff greifen (jede der Türen)
   if (seated()) return;
-  let door = null, dd = .2, rem = null;
+  let door = null, dd = .2, rem = null, trk = null;
   if (!pcar.dead) for (const d of pcar.doors) { const dist = d.handle.getWorldPosition(v1).distanceTo(p); if (dist < dd) { dd = dist; door = d; } }
+  if (!pcar.dead && pcar.trunk) { const dist = pcar.trunk.handle.getWorldPosition(v1).distanceTo(p); if (dist < dd + .06) { dd = dist; trk = pcar.trunk; door = null; } }   // Kofferraum-Griff
   // echte Türgriffe an den Autos der anderen Spieler
   for (const pl of net.players.values()) {
     if (!pl.carMesh?.visible || !pl.cmHandles || pl.carType === 'scooter') continue;
-    pl.cmHandles.forEach((hd, i) => { if (!hd) return; const dist = hd.getWorldPosition(v1).distanceTo(p); if (dist < dd) { dd = dist; rem = { p: pl, seat: i }; door = null; } });
+    pl.cmHandles.forEach((hd, i) => { if (!hd) return; const dist = hd.getWorldPosition(v1).distanceTo(p); if (dist < dd) { dd = dist; rem = { p: pl, seat: i }; door = null; trk = null; } });
   }
+  if (trk) { h.held = { type: 'trunk', T: trk }; trk.grab = h; trk.anim = undefined; haptic(h, .4, 50); return; }
   if (rem) {
     const s = rem.p.st;
     if (rem.seat === 0 && s?.c) { msg(rem.p.name + ' sitzt am Steuer', 2); haptic(h, .3, 40); return; }
@@ -3894,6 +3923,8 @@ function release(h) {
   const x = h.held; if (!x) return;
   if (x.type === 'tool') holster(x.t);
   if (x.type === 'door') x.d.grab = null;
+  if (x.type === 'trunk') x.T.grab = null;
+  if (x.type === 'cart' && !hands.some(o => o !== h && o.held?.cart === x.cart)) x.cart.held = null;
   if (x.type === 'dash') dashRelease(h);
   if (x.type === 'item') dropItem(x.it, h, handVel.get(h)?.v.clone());
   h.held = null;
@@ -4005,6 +4036,7 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyB' && player.inCar) honk();                       // Hupe
   if (e.code === 'KeyT') startFuel();                                   // Tanken (an der Zapfsäule)
   if (e.code === 'KeyN' && canSiren() && player.inCar) setSiren(!job.siren);   // Sirene
+  if (e.code === 'KeyK' && (player.inCar || pcar.group.position.distanceTo(headWorld) < 7)) toggleTrunk();   // Kofferraum auf/zu
   if (e.code === 'KeyQ') deskItemToggle();                               // Essen/Trinken aufheben bzw. loslassen (Maustaste halten = essen/trinken)
   if (e.code === 'KeyG' && vehicle.id === 'roadster' && player.inCar) jetOn();   // Raumflug (Tesla Roadster)
   if (e.code === 'KeyM' && vehicle.emerg === 'fire' && player.inCar) setHose(!job.hose);   // Wasserwerfer (Feuerwehr)
@@ -4759,7 +4791,14 @@ function adminGive(id) {
   if (id === -1) { money += a; addTx('Admin-Geld', a); writeSave(); msg('+' + a.toLocaleString('de-DE') + ' € (Admin)', 2); return; }
   const p = net.players.get(id); if (!p) return; netSig(id, { gift: a }); msg(p.name + ' bekommt ' + a.toLocaleString('de-DE') + ' € (Admin)', 2.5);
 }
+// Admin: Konto eines Spielers (oder das eigene) auf 0 € setzen
+function adminZero(id) {
+  if (!isAdmin()) return;
+  if (id === -1) { const old = money; money = 0; addTx('Admin: Konto auf 0', -old); writeSave(); msg('Dein Konto steht jetzt auf 0 €', 2.5); return; }
+  const p = net.players.get(id); if (!p) return; netSig(id, { zero: 1 }); msg('Konto von ' + p.name + ' auf 0 € gesetzt', 2.5);
+}
 function onMoney(p, m) {
+  if (m.zero) { const old = money; money = 0; addTx('Konto vom Admin auf 0 gesetzt', -old); writeSave(); uiTone(SND.warn); msg('Der Admin hat dein Konto auf 0 € gesetzt', 4); }
   if (m.pay > 0) { money += m.pay; addTx('Von ' + p.name, m.pay); writeSave(); uiTone(SND.arrive); msg(p.name + ' hat dir ' + m.pay.toLocaleString('de-DE') + ' € überwiesen', 4); }
   if (m.gift > 0) { money += m.gift; addTx('Geschenk vom Admin', m.gift); writeSave(); uiTone(SND.arrive); msg('Der Admin hat dir ' + m.gift.toLocaleString('de-DE') + ' € geschenkt!', 4); }
 }
@@ -4900,6 +4939,7 @@ function makeItem(type, pos, paid = false, slot = null) {
   mesh.userData.item = it; shopItems.push(it); if (slot) slot.item = it; return it;
 }
 function removeItem(it) {
+  outOfCart(it);
   if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
   if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
   it.mesh.parent?.remove(it.mesh); const i = shopItems.indexOf(it); if (i >= 0) shopItems.splice(i, 1);
@@ -4927,6 +4967,7 @@ const dropFx = new PSys(260, .05, false, true, true); dropFx.tint = [.55, .8, 1]
 // ---------- Ware greifen / loslassen ----------
 const nearestItem = (p, r) => { let best = null, bd = r; for (const it of shopItems) { if (it.held) continue; const d = it.mesh.getWorldPosition(v1).distanceTo(p); if (d < bd) { bd = d; best = it; } } return best; };
 function holdItem(it, h) {
+  outOfCart(it);
   if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
   if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
   h.ctrl.add(it.mesh); it.mesh.position.set(0, -.012, -.075); it.mesh.rotation.set(0, 0, 0); it.mesh.scale.setScalar(1 - Math.min(.7, it.eatT / 2.6 * .75));
@@ -4969,14 +5010,14 @@ function drawLane(L) {
   g.fillStyle = '#0b1220'; g.fillRect(0, 0, W, H);
   const gr = g.createLinearGradient(0, 0, W, 0); gr.addColorStop(0, '#1b5e20'); gr.addColorStop(1, '#2e7d32'); g.fillStyle = gr; g.fillRect(0, 0, W, 32);
   tx(g, L.name, 10, 17, 17, '#fff', 'left', 800); tx(g, 'KASSE', W - 10, 17, 13, '#c8e6c9', 'right', 700);
-  const n = L.items.length;
+  const all = L.all || L.items, n = all.length;
   if (time - L.paidT < 3.5) {
     g.beginPath(); g.arc(W / 2, 74, 32, 0, 7); g.fillStyle = '#2e7d32'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 8; g.lineCap = 'round'; g.lineJoin = 'round'; g.beginPath(); g.moveTo(W / 2 - 15, 75); g.lineTo(W / 2 - 4, 87); g.lineTo(W / 2 + 17, 61); g.stroke();
     tx(g, 'Bezahlt – danke!', W / 2, 126, 21, '#a5d6a7', 'center', 800);
   } else if (!n) {
-    tx(g, 'Ware aufs Band legen', W / 2, 78, 19, '#9db3c8', 'center', 700); tx(g, 'Hunger und Durst stillen:', W / 2, 108, 14, '#6f8499', 'center', 500); tx(g, 'Essen + Getränke vom Tisch', W / 2, 126, 14, '#6f8499', 'center', 500);
+    tx(g, 'Ware aufs Band legen', W / 2, 78, 19, '#9db3c8', 'center', 700); tx(g, 'oder den Einkaufswagen', W / 2, 108, 14, '#6f8499', 'center', 500); tx(g, 'hier neben die Kasse stellen', W / 2, 126, 14, '#6f8499', 'center', 500);
   } else {
-    L.items.slice(0, 4).forEach((it, i) => { tx(g, it.def.name, 12, 50 + i * 21, 17, '#e3eaf2', 'left', 600); tx(g, fmtEur(it.def.price), W - 12, 50 + i * 21, 17, '#e3eaf2', 'right', 600); });
+    all.slice(0, 4).forEach((it, i) => { tx(g, it.def.name + (it.cart ? ' (Wagen)' : ''), 12, 50 + i * 21, 17, '#e3eaf2', 'left', 600); tx(g, fmtEur(it.def.price), W - 12, 50 + i * 21, 17, '#e3eaf2', 'right', 600); });
     if (n > 4) tx(g, '+ ' + (n - 4) + ' weitere', 12, 50 + 4 * 21, 14, '#8aa0b5', 'left', 500);
     g.fillStyle = 'rgba(255,255,255,.18)'; g.fillRect(10, 104, W - 20, 2);
     tx(g, 'SUMME', 12, 124, 15, '#9db3c8', 'left', 700); tx(g, fmtEur(L.total), W - 12, 124, 30, '#fff', 'right', 800);
@@ -4992,6 +5033,7 @@ const mouthPos = () => camera.localToWorld(V(0, -.105, -.075));
 function updItem(it, dt) {
   if (it.held || it.rest) return;
   const m = it.mesh; it.v.y -= 9.8 * dt; m.position.addScaledVector(it.v, dt);
+  for (const c of carts) { if (c.g.position.distanceToSquared(m.position) > 4) continue; const l = cartLocal(c, m.position); if (inBasket(l, 1.7) && l.y - it.bot <= CART_IN.y0 + .02) { putInCart(it, c); return; } }   // in den Einkaufswagen gefallen
   const sy = supportY(m.position.x, m.position.y + it.bot - .01, m.position.z) + it.bot;
   if (m.position.y <= sy) {
     m.position.y = sy;
@@ -5043,8 +5085,14 @@ function deskItemToggle() {
   if (heldDesk) { const it = heldDesk; heldDesk = null; const w = it.mesh.getWorldPosition(V()), q = it.mesh.getWorldQuaternion(new THREE.Quaternion()); scene.add(it.mesh); it.mesh.position.copy(w); it.mesh.quaternion.copy(q); it.held = null; it.rest = false; camera.getWorldDirection(v1); it.v.copy(v1).multiplyScalar(1.4); return; }
   camera.getWorldDirection(v1); let best = null, bd = .93;
   for (const it of shopItems) { if (it.held) continue; const d = v2.copy(it.mesh.getWorldPosition(v3)).sub(headWorld); const L = d.length(); if (L > 2.5) continue; const dot = d.divideScalar(L).dot(v1); if (dot > bd) { bd = dot; best = it; } }
-  if (!best) return;
-  const it = best; if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
+  const pushing = carts.find(c => c.held === 'desk');
+  if (!best && pushing) { pushing.held = null; msg('Einkaufswagen losgelassen', 1.5); return; }
+  if (!best) {                                                             // kein Artikel im Blick: Einkaufswagen in der Nähe schieben
+    let cb = null, cd = 2.2; for (const c of carts) { const d = c.g.position.distanceTo(headWorld); if (d < cd) { cd = d; cb = c; } }
+    if (cb) { cb.held = 'desk'; msg('Einkaufswagen schieben – Q = loslassen, Ware mit Q hineinwerfen', 3); }
+    return;
+  }
+  const it = best; outOfCart(it); if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
   if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
   camera.add(it.mesh); it.mesh.position.set(.17, -.17, -.4); it.mesh.rotation.set(0, 0, 0); it.mesh.scale.setScalar(1 - Math.min(.72, it.eatT / 2.6 * .75)); it.held = 'desk'; it.rest = false; heldDesk = it; tagItem = it; tagUntil = time + 2;
   playAt(SND.thump, headWorld, .3, 2);
@@ -5054,7 +5102,10 @@ function updLanes(dt) {
   for (const I of interiors) for (const L of I.lanes || []) {
     if (!L.pad) continue;
     L.nearD = L.pad.distanceTo(headWorld);
-    let total = 0; for (const it of L.items) total += it.def.price; total = Math.round(total * 100) / 100;
+    const ci = L.nearD < 8 ? cartNearLane(L).flatMap(c => c.items.filter(it => !it.paid && !it.stolen)) : [];   // Einkaufswagen an der Kasse: alles darin wird mit gescannt
+    if (ci.length > (L.cartItems?.length || 0)) playAt(SND.scan, L.pad, .5, 3);
+    L.cartItems = ci; L.all = [...L.items, ...ci];
+    let total = 0; for (const it of L.all) total += it.def.price; total = Math.round(total * 100) / 100;
     if (total !== L.total) { L.total = total; L.dirty = true; }
     if (L.nearD < 6) { L.redraw = (L.redraw || 0) - dt; if (L.dirty || L.redraw <= 0 || Math.round(money * 100) !== L.moneyShown) { drawLane(L); L.dirty = false; L.redraw = .5; } }
     L.ring.material.opacity = L.total > 0 && phone.where === 'hand' && L.nearD < 1.7 ? .35 + .35 * Math.sin(time * 6) : 0;
@@ -5071,7 +5122,7 @@ function doPay(P) {
   const L = P.L, total = Math.round(L.total * 100) / 100;
   if (money + 1e-6 < total) { P.state = 'fail'; P.t1 = time; haptic(handBy('left'), .9, 220); uiTone(SND.warn); return; }
   P.bal0 = money; money -= total; P.bal1 = money; P.state = 'ok'; P.t1 = time; L.paidT = time; L.dirty = true;
-  for (const it of L.items) it.paid = true; L.items = []; L.total = 0;
+  for (const it of L.all || L.items) it.paid = true; L.items = []; L.cartItems = []; L.all = []; L.total = 0;
   save.st.shop = (save.st.shop || 0) + 1; addTx('Einkauf – ' + L.name, -total); writeSave();
   uiTone(SND.nfc); haptic(handBy('left'), .7, 140); playAt(SND.scan, L.pad, .6, 3);
 }
@@ -5133,6 +5184,73 @@ function drawPayPopup(g) {
   }
   g.restore();
 }
+// ---------- Einkaufswagen (Supermarkt): am Griff schieben (Grip, PC: Q), Ware hineinlegen – an der Kasse wird der ganze Wagen gescannt ----------
+const CART_IN = { x: .21, z0: -.26, z1: .42, y0: .52, y1: 1.25 };            // Korb (Wagen-Koordinaten, Griff hinten bei -z)
+const carts = [];
+const cartParts = (() => {
+  const P = [], steel = 0xb9c0c7, red = 0xc62828, blk = 0x1b1b1b;
+  const bar = (w, h, d, x, y, z, col = steel) => P.push(iPart(new THREE.BoxGeometry(w, h, d), col, x, y, z));
+  for (const y of [.5, 1.02]) { bar(.5, .02, .02, 0, y, -.3); bar(.5, .02, .02, 0, y, .46); bar(.02, .02, .76, -.25, y, .08); bar(.02, .02, .76, .25, y, .08); }
+  for (const x of [-.25, .25]) for (const z of [-.3, .46]) bar(.02, .52, .02, x, .76, z);
+  for (const x of [-.2, .2]) { bar(.025, .025, .8, x, .16, .06); bar(.02, .36, .02, x, .33, -.3); bar(.02, .36, .02, x * 1.05, .33, .42); }
+  for (const x of [-.27, .27]) bar(.02, .1, .1, x, 1.03, -.36);
+  P.push(iPart(new THREE.CylinderGeometry(.018, .018, .56, 10).rotateZ(Math.PI / 2), red, 0, 1.06, -.41));   // roter Griff
+  for (const [x, z] of [[-.19, -.28], [.19, -.28], [-.21, .42], [.21, .42]]) P.push(iPart(new THREE.CylinderGeometry(.055, .055, .035, 12).rotateZ(Math.PI / 2), blk, x, .06, z));
+  return mergeGeometries(P);
+})();
+const cartWire = (() => {
+  const [c, g] = C(128, 128); g.clearRect(0, 0, 128, 128); g.strokeStyle = '#fff'; g.lineWidth = 3; for (let i = 0; i <= 128; i += 16) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 128); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(128, i); g.stroke(); }
+  const t = T(c, false); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(3, 2);
+  return new THREE.MeshStandardMaterial({ map: t, color: 0xc8cdd2, metalness: .7, roughness: .35, alphaTest: .5, side: THREE.DoubleSide });
+})();
+const cartWireGeo = (() => {
+  const L = [], pl = (w, h, rx, ry, x, y, z) => { const g = new THREE.PlaneGeometry(w, h); if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); g.translate(x, y, z); L.push(g); };
+  pl(.76, .52, 0, Math.PI / 2, -.25, .76, .08); pl(.76, .52, 0, Math.PI / 2, .25, .76, .08); pl(.5, .52, 0, 0, 0, .76, .46); pl(.5, .52, 0, 0, 0, .76, -.3); pl(.5, .76, -Math.PI / 2, 0, 0, .5, .08);
+  return mergeGeometries(L);
+})();
+const cartMat = new THREE.MeshStandardMaterial({ vertexColors: true, metalness: .6, roughness: .35 });
+function makeCart(x, z, yaw, I) {
+  const g = new THREE.Group(); g.add(new THREE.Mesh(cartParts, cartMat), new THREE.Mesh(cartWireGeo, cartWire));
+  g.position.set(x, I.y0, z); g.rotation.y = yaw; scene.add(g);
+  const c = { g, yaw, held: null, items: [], I, home: { x, z, yaw }, homeT: 0 }; carts.push(c); return c;
+}
+function initCarts() {
+  for (const I of interiors) if (I.kind === 'market') for (let i = 0; i < 4; i++) { const p = I.toW(2.3 + i * .62, 12.6); makeCart(p.x, p.z, I.rot + Math.PI, I); }   // Wagen-Reihe am Eingang
+}
+const cartLocal = (c, p) => c.g.worldToLocal(v3.copy(p));
+const inBasket = (l, yTop = CART_IN.y1) => Math.abs(l.x) < CART_IN.x && l.z > CART_IN.z0 && l.z < CART_IN.z1 && l.y > CART_IN.y0 - .05 && l.y < yTop;
+function nearestCartHandle(p, r) {
+  let best = null, bd = r;
+  for (const c of carts) { const l = cartLocal(c, p), d = Math.hypot(Math.max(0, Math.abs(l.x) - .28), l.y - 1.06, l.z + .41); if (d < bd) { bd = d; best = c; } }
+  return best;
+}
+function putInCart(it, c) {
+  const l = c.g.worldToLocal(it.mesh.getWorldPosition(V()));
+  c.g.add(it.mesh); it.mesh.position.set(clamp(l.x, -.17, .17), CART_IN.y0 + it.bot + .005, clamp(l.z, -.22, .38)); it.mesh.rotation.set(0, rand(0, 6.28), 0);
+  it.cart = c; it.rest = true; it.v.set(0, 0, 0); if (!c.items.includes(it)) c.items.push(it); playAt(SND.thump, it.mesh.getWorldPosition(v1), .35, 2);
+}
+const outOfCart = it => { if (it.cart) { it.cart.items = it.cart.items.filter(q => q !== it); it.cart = null; } };
+function updCarts(dt) {
+  for (const c of carts) {
+    if (c.held) {
+      let tx, tz;
+      if (c.held === 'desk') { camera.getWorldDirection(v1); v1.y = 0; v1.normalize(); c.yaw = Math.atan2(v1.x, v1.z); tx = headWorld.x + v1.x * .45; tz = headWorld.z + v1.z * .45; }
+      else {
+        const hs = hands.filter(h => h.held?.type === 'cart' && h.held.cart === c); if (!hs.length) { c.held = null; continue; }
+        const p = V(); hs.forEach(h => p.add(h.ctrl.getWorldPosition(v2))); p.divideScalar(hs.length);
+        const dx = p.x - headWorld.x, dz = p.z - headWorld.z; if (Math.hypot(dx, dz) > .12) c.yaw += wrapA(Math.atan2(dx, dz) - c.yaw) * Math.min(1, dt * 5);   // Wagen zeigt von dir weg
+        tx = p.x; tz = p.z;
+      }
+      const np = V(tx + Math.sin(c.yaw) * .41, 0, tz + Math.cos(c.yaw) * .41); pushOutOf(np, .36);       // Griff in der Hand, Korb davor; Wände/Regale schieben zurück
+      const mv = Math.hypot(np.x - c.g.position.x, np.z - c.g.position.z);
+      c.g.position.set(np.x, floorAt(np.x, np.z), np.z); c.g.rotation.y = c.yaw; c.homeT = 0;
+      if (mv > dt * 1.2 && time > (c.sndT || 0)) { c.sndT = time + .35; playAt(SND.slide, c.g.position, .12, 2); }   // Rollen
+    } else if (Math.hypot(c.g.position.x - c.home.x, c.g.position.z - c.home.z) > 3 && headWorld.distanceTo(c.g.position) > 60) {
+      c.homeT += dt; if (c.homeT > 90) { for (const it of c.items.slice()) removeItem(it); c.g.position.set(c.home.x, c.I.y0, c.home.z); c.yaw = c.home.yaw; c.g.rotation.y = c.yaw; c.homeT = 0; }   // stehengelassen: kommt zurück an den Eingang
+    }
+  }
+}
+function cartNearLane(L) { return carts.filter(c => Math.hypot(c.g.position.x - L.cx, c.g.position.z - L.cz) < 2.4); }
 // Hauptschleife der Ware, Kasse und Bezahlung
 let shopVisT = 0;
 function updShop(dt) {
@@ -5141,8 +5259,8 @@ function updShop(dt) {
   shopVisT -= dt;
   if (shopVisT <= 0) {
     shopVisT = .4;
-    for (const it of shopItems) it.mesh.visible = !!it.held || it.mesh.position.distanceToSquared(headWorld) < 55 * 55;
-    for (const it of shopItems.slice()) if (!it.held && !it.slot && it.mesh.position.distanceToSquared(headWorld) > 160 * 160) removeItem(it);       // liegengebliebene Ware weit weg verschwindet
+    for (const it of shopItems) it.mesh.visible = !!it.held || (it.cart ? it.cart.g.position : it.mesh.position).distanceToSquared(headWorld) < 55 * 55;
+    for (const it of shopItems.slice()) if (!it.held && !it.slot && !it.cart && it.mesh.position.distanceToSquared(headWorld) > 160 * 160) removeItem(it);       // liegengebliebene Ware weit weg verschwindet
     for (const it of shopItems) if (!it.paid && !it.stolen && it.I) {            // mit unbezahlter Ware aus dem Laden: Ladendiebstahl
       const p = it.mesh.getWorldPosition(v1), hb = it.I.hollow;
       if (!(p.x > hb.min.x - .6 && p.x < hb.max.x + .6 && p.z > hb.min.z - .6 && p.z < hb.max.z + .6)) { it.stolen = true; addWanted(1, 'Ladendiebstahl'); msg('Ladendiebstahl! Die Polizei ist alarmiert', 3.5); playAt(SND.warn, p, 1, 6); }
@@ -5151,6 +5269,7 @@ function updShop(dt) {
       s.t += .4; if (s.t > 45 && s.shop && Math.hypot(s.x - headWorld.x, s.z - headWorld.z) > 3.5) { const it = makeItem(s.type, V(s.x, s.y + 1, s.z), false, s); it.mesh.position.y = s.y + it.bot; it.mesh.rotation.y = rand(0, 6.28); it.I = s.shop; }
     }
   }
+  updCarts(dt);
   for (const it of shopItems) updItem(it, dt);
   for (const h of hands) if (h.held?.type === 'item') useItem(h.held.it, dt, mouth);
   if (heldDesk) { deskItemPose(dt); useItem(heldDesk, dt, mouth); }
@@ -6101,7 +6220,7 @@ function onNet(m) {
     if (m.hit) onHit(m.hit, p);
     if (m.arrest && wanted.stars) { const fine = busted(p.name + ' (Polizei)'); netSig(p.id, { reward: Math.max(200, fine) }); }   // von einem Polizisten festgenommen
     if (m.reward) { money += m.reward; save.st.arrest++; msg('Festnahme erfolgreich! +' + m.reward + ' €', 4); uiTone(SND.arrive); }
-    if (m.pay || m.gift) onMoney(p, m);                                  // Überweisung / Admin-Geschenk
+    if (m.pay || m.gift || m.zero) onMoney(p, m);                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
     if (m.killed) { msg('Du hast ' + p.name + ' erledigt!', 3); money += 100; }
   }
 }
@@ -6306,6 +6425,7 @@ function myState() {
   if (job.siren) st.sir = 1;
   if (pcar.jet?.on && player.inCar) st.jt = 1;                           // Raumflug: andere sehen die Flammen
   if (job.hose) st.hs = 1;                                               // Wasserwerfer an
+  if (pcar.trunk && pcar.trunk.a > .01) st.tk = r2(pcar.trunk.a);        // Kofferraum offen
   // CarPlay des Fahrers, damit Mitfahrer dasselbe auf den Displays sehen
   if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on && POI[nav.n] ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0, r: radio.on ? radio.st : -1, v: r2(save.vol) };
   st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
@@ -6486,6 +6606,7 @@ function updRemoteCar(p, dt) {
     p.cmCh = cm.getObjectByName('chassis'); p.cmWheels = []; p.cmDoors = []; p.cmScreens = [];
     cm.traverse(o => { if (o.name === 'wheel') p.cmWheels.push(o); if (/^door\d$/.test(o.name)) p.cmDoors[+o.name[4]] = o; if (o.isMesh && o.userData.screen) p.cmScreens.push({ m: o, orig: o.material }); });
     p.cmHandles = p.cmDoors.map(pv => pv?.getObjectByName('handle') || null);   // echte Türgriffe zum Einsteigen
+    p.cmTrunk = cm.getObjectByName('trunk') || null; p.cmTrunkGlass = cm.getObjectByName('trunkglass') || null;
     p.cmWins = p.cmDoors.map((pv, i) => { const l = []; pv?.children.forEach(o => { if (o.isMesh && o.userData.win === i) l.push({ m: o, y0: o.position.y, drop: o.userData.drop }); }); return l.length ? l : null; });
     p.winVal = p.cmDoors.map(() => 0);
     p.alarmOn = false; p.dentN = 0; p.dmSeen = 0;
@@ -6520,6 +6641,10 @@ function updRemoteCar(p, dt) {
     pv.userData.a = (pv.userData.a || 0) + (tgt - (pv.userData.a || 0)) * Math.min(1, dt * 6);
     pv.rotation.y = -pv.userData.side * pv.userData.a;
     doorSound(pv.userData, pv.userData.a, pv, dt, s => slamCar(p.sl || (p.sl = {}), pv.userData.side, s));   // Tür auf: Klacken, zu: dumpfer Schlag + Auto wippt
+  }
+  if (p.cmTrunk) {                                                       // Kofferraum wie beim Besitzer
+    const U = p.cmTrunk.userData; U.a = (U.a || 0) + ((s.tk || 0) - (U.a || 0)) * Math.min(1, dt * 6);
+    setTrunkPose(p.cmTrunk, p.cmTrunkGlass, U.a, U.drop, U.glassH); doorSound(U, U.a, p.cmTrunk, dt, sv => slamCar(p.sl || (p.sl = {}), 0, sv));
   }
   // Fenster: Fahrer (wd), Mitfahrer (rw) – mein eigener Sitz sofort aus meiner Eingabe
   for (let i = 0; i < p.winVal.length; i++) {
@@ -6643,7 +6768,35 @@ function orientCar(parts, keepScale = false) {
 const partBox = list => { const b = new THREE.Box3(); list.forEach(p => b.union(p.geo.boundingBox)); return b; };
 
 // Türen im Modell erkennen ("Door_FL", "door_rr" …) – Halter/Scharniere bleiben an der Karosserie
-const doorKeyOf = n => { if (/limiter|hinge|scharnier/i.test(n)) return null; const m = n.match(/door[\s_.-]*(front|rear|f|r)[\s_.-]*(left|right|l|r)(?![a-z])/i); return m ? (m[1][0] + m[2][0]).toUpperCase() : null; };
+const doorKeyOf = n => {
+  if (/limiter|hinge|scharnier/i.test(n)) return null;
+  let m = n.match(/door[\s_.-]*(front|rear|f|r)[\s_.-]*(left|right|l|r)(?![a-z])/i); if (m) return (m[1][0] + m[2][0]).toUpperCase();
+  m = n.match(/(?:^|[^a-z])door[\s_.-]*([12])(?![0-9a-z])/i); return m ? 'F' + m[1] : null;          // Porsche: "door_1" / "door_2" (Seite ergibt sich aus der Lage)
+};
+// Modelle ohne sprechende Namen (z.B. Forza-Rig des Jeep, alles "Object_123"): Name aus dem nächsten benannten Eltern-Knoten,
+// Türen / Außenspiegel / Lenkrad aus dem Skelett (an welchem Knochen das Teil hängt)
+const BONE_DOORS = { DoorLF: 'Door_FL', DoorRF: 'Door_FR', DoorLR: 'Door_RL', DoorRR: 'Door_RR', MirrorL: 'Door_FL_mirror', MirrorR: 'Door_FR_mirror', Trunk: 'Trunk', GlassRear: 'TrunkGlass' };
+function nameCarParts(parts) {
+  for (const p of parts) {
+    if (p.name && !/^(Object|Mesh|node|Cube|Plane|Cylinder|Sphere)[_.]?\d*$/i.test(p.name)) continue;
+    const up = (p.path || []).find(n => n && !/correction$|^GLTF|^root|^Sketchfab|\.fbx$|^RootNode|rig_\d+$/i.test(n)); if (up) p.name = up;
+  }
+  for (const p of parts) {
+    if (!p.bone) continue; let b = p.bone; while (/_\d+$/.test(b)) b = b.replace(/_\d+$/, ''); b = b.replace(/^bone/, '');
+    if (BONE_DOORS[b]) p.name = BONE_DOORS[b] + '_' + p.name; else if (/^SteeringWheel/.test(b)) p.name = 'Steering_wheel_' + p.name;
+  }
+}
+// Kein echter Türgriff im Modell: Punkt auf der Außenhaut der Tür (hinten, oberes Drittel) – dort sitzt bei echten Autos der Griff
+function skinHandle(list, db, side) {
+  const len = db.max.z - db.min.z, h = db.max.y - db.min.y; let best = null;
+  for (const p of list) { const a = p.geo.attributes.position; for (let i = 0; i < a.count; i++) {
+    const x = a.getX(i), y = a.getY(i), z = a.getZ(i), rz = (z - db.min.z) / len, ry = (y - db.min.y) / h;
+    if (rz < .1 || rz > .34 || ry < .45 || ry > .85) continue;
+    const ox = side * x; if (!best || ox > best.ox) best = { ox, x, y, z };
+  } }
+  return best ? V(best.x + side * .014, best.y - .02, best.z) : null;
+}
+const handleBar = (() => { let m; return () => m || (m = M(0xd8dce0, { metalness: .9, roughness: .25 })); })();
 // zusammenhängende Stücke einer Geometrie (der Türgriff ist im Modell ein eigenes Stück)
 function islands(geo) {
   const pos = geo.attributes.position, n = pos.count, par = new Int32Array(n), seen = new Map(), out = new Map();
@@ -6698,6 +6851,7 @@ function carClone(vis) {
 // own = false: nur das Modell für andere Spieler bauen (dein eigenes Auto bleibt unverändert)
 function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   const c = own ? pcar : { fl: { mats: [], orig: [] } }, parts = AS.flatten(gltf.scene);
+  nameCarParts(parts);
   const bb = orientCar(parts, true), halfW = bb.max.x, top = bb.max.y;
   const triCount = gg => (gg.index ? gg.index.count : gg.attributes.position.count) / 3;
   const hasTex = m => m.map || m.normalMap || m.roughnessMap || m.metalnessMap || m.aoMap || m.emissiveMap;
@@ -6713,6 +6867,17 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   // Schatten wirft nur eine grobe Kopie (~5.000 Dreiecke)
   const low = parts.map(p => ({ p, g: AS.decimate(p.geo, .09) })).filter(e => e.g.index.count);
   const shadowGeo = mergeGeometries(low.map(e => e.g));
+  // Lenkrad ohne Namen im Modell (z.B. Tesla-Joch): flaches, ringförmiges Teil vor dem Fahrersitz suchen
+  if (!parts.some(p => STEER_RE.test(p.name))) {
+    let best = null, bs = 1e9;
+    for (const p of parts) {
+      const b = p.geo.boundingBox, s = b.getSize(V()), c0 = b.getCenter(V());
+      if (s.x < .26 || s.x > .46 || s.y < .1 || s.y > .46 || s.z > .3 || Math.abs(c0.x) < .18 || Math.abs(c0.x) > .62 || c0.y < top * .4 || c0.y > top * .85 || c0.z < bb.min.z * .1 || c0.z > bb.max.z * .55 || isGlass(p) || isBody(p)) continue;
+      const score = Math.abs(s.x - .37) + Math.abs(Math.abs(c0.x) - .37) * .5;
+      if (score < bs) { bs = score; best = p; }
+    }
+    if (best) best.name = 'Steering_' + best.name;
+  }
   const steer = parts.filter(p => STEER_RE.test(p.name) && !/column/i.test(p.name));
   const sc = steer.length ? partBox(steer).getCenter(V()) : V(.37, top * .66, .4);
   const DX = Math.sign(sc.x) || 1;                                   // Fahrerseite (+1 = links)
@@ -6758,27 +6923,51 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   const doors = [], doorMap = new Map();
   for (const p of parts) { const k = doorKeyOf(p.name); if (k && !wheelParts.includes(p) && !steer.includes(p)) (doorMap.get(k) || doorMap.set(k, []).get(k)).push(p); }
   const realDoors = doorMap.size >= 2;
+  const setHandle = (d, hp) => { d.handle.position.copy(hp).sub(d.pivot.position); d.a0 = Math.atan2(d.side * d.handle.position.x, -d.handle.position.z); };
+  const addBar = d => { const bar = new THREE.Mesh(BOX, handleBar()); bar.scale.set(.03, .028, .15); bar.position.copy(d.handle.position); d.pivot.add(bar); };   // Modell hat keinen eigenen Griff: kleiner Griff auf der Außenhaut
   if (realDoors) {
     for (const [key, list] of doorMap) {
       const solid = list.filter(p => !isGlass(p)), ext = solid.filter(p => !isInt(p)), use = ext.length ? ext : solid.length ? solid : list;
       const db = partBox(solid.length ? solid : list), side = Math.sign(db.getCenter(V()).x) || 1;
       const pivot = new THREE.Group(); pivot.position.copy(hingeOf(use, db, side)); ch.add(pivot);
       const found = findHandle(use, db, side);
-      const hp = found || V(side * Math.max(Math.abs(db.min.x), Math.abs(db.max.x)), db.min.y + (db.max.y - db.min.y) * .5, db.min.z + (db.max.z - db.min.z) * .15);
-      const handle = new THREE.Object3D(); handle.name = 'handle'; handle.position.copy(hp).sub(pivot.position); pivot.add(handle);
-      doors.push({ key, pivot, handle, side, found: !!found, front: key[0] === 'F', box: db, list, a: 0, max: key[0] === 'F' ? 1.15 : 1.05, a0: Math.atan2(side * handle.position.x, -handle.position.z) });
+      const handle = new THREE.Object3D(); handle.name = 'handle'; pivot.add(handle);
+      const d = { key, pivot, handle, side, found: !!found, front: key[0] === 'F', box: db, list, use, a: 0, max: key[0] === 'F' ? 1.15 : 1.05, a0: 0 };
+      setHandle(d, found || V(side * Math.max(Math.abs(db.min.x), Math.abs(db.max.x)), db.min.y + (db.max.y - db.min.y) * .5, db.min.z + (db.max.z - db.min.z) * .15)); doors.push(d);
+    }
+    // Tür ohne erkannten Griff: Griff der Gegenseite spiegeln (das Modell ist symmetrisch), sonst Punkt auf der Außenhaut + kleiner Griff
+    for (const d of doors) if (!d.found) {
+      const o = doors.find(e => e.found === true && e.front === d.front && e.side === -d.side);
+      if (o) { const w = o.handle.position.clone().add(o.pivot.position); setHandle(d, V(-w.x, w.y, w.z)); d.found = 'mirror'; }
+      else { const sk = skinHandle(d.use, d.box, d.side); if (sk) setHandle(d, sk); addBar(d); }
     }
     // Reihenfolge = Sitzplätze: Fahrer, Beifahrer, hinten Fahrerseite, hinten andere Seite
     doors.sort((a, b) => (b.front - a.front) || ((b.side === DX) - (a.side === DX)));
   } else {
-    // Modell ohne eigene Türen: Fahrertür aus der Karosserie ausschneiden
-    const pivot = new THREE.Group(); pivot.position.set(DX * halfW * .92, .6, zF); ch.add(pivot);
-    const handle = new THREE.Object3D(); handle.name = 'handle'; handle.position.set(DX * (halfW * .08 + .02), .28, -(zF - zR) + .22); pivot.add(handle);
-    doors.push({ key: 'F' + (DX > 0 ? 'L' : 'R'), pivot, handle, side: DX, found: false, front: true, a: 0, max: 1.25, a0: Math.atan2(DX * handle.position.x, -handle.position.z), box: new THREE.Box3(V(Math.min(DX * halfW * .74, DX * halfW), .22, zR), V(Math.max(DX * halfW * .74, DX * halfW), top * .9, zF)) });
+    // Modell ohne eigene Türen (z.B. Tesla Roadster): Fahrer- und Beifahrertür aus der Karosserie ausschneiden
+    for (const s of [DX, -DX]) {
+      const pivot = new THREE.Group(); pivot.position.set(s * halfW * .92, .6, zF); ch.add(pivot);
+      const handle = new THREE.Object3D(); handle.name = 'handle'; pivot.add(handle);
+      const d = { key: 'F' + (s > 0 ? 'L' : 'R'), pivot, handle, side: s, found: false, front: true, a: 0, max: 1.25, a0: 0, cut: [], box: new THREE.Box3(V(Math.min(s * halfW * .74, s * halfW), .22, zR), V(Math.max(s * halfW * .74, s * halfW), top * .9, zF)) };
+      setHandle(d, V(s * (halfW + .02), .88, zR + .22)); doors.push(d);
+    }
   }
   doors.forEach((d, i) => { d.pivot.name = 'door' + i; d.pivot.userData.side = d.side; });
   const drv = doors[0], doorOf = new Map();
   if (realDoors) doors.forEach(d => d.list.forEach(p => doorOf.set(p, d)));
+  // ---------- Kofferraum / Heckklappe (Jetta: Kofferraumdeckel, Jeep: Heckklappe klappt runter, die Scheibe fährt vorher in die Klappe) ----------
+  const isTrunkPart = p => /trunk[\s_.#-]*lid|boot[\s_.-]*lid|tailgate|liftgate|heckklappe|kofferraumdeckel/i.test(p.name + ' ' + (p.path || []).join(' ')) || /^Trunk(Glass)?_/.test(p.name);
+  const tParts = parts.filter(p => isTrunkPart(p) && !wheelParts.includes(p) && !steer.includes(p) && !doorOf.has(p));
+  let trunk = null;
+  if (tParts.length) {
+    const gl = tParts.filter(p => /^TrunkGlass_/.test(p.name)), solid = tParts.filter(p => !gl.includes(p)), tb = partBox(solid.length ? solid : tParts), drop = gl.length > 0;
+    const pivot = new THREE.Group(); pivot.name = 'trunk'; pivot.position.set(0, drop ? tb.min.y + .03 : tb.max.y - .02, drop ? (tb.min.z + tb.max.z) / 2 : tb.max.z - .02); ch.add(pivot);
+    const handle = new THREE.Object3D(); handle.name = 'thandle'; handle.position.set(0, (drop ? tb.max.y - .06 : tb.min.y + (tb.max.y - tb.min.y) * .3) - pivot.position.y, tb.min.z - .02 - pivot.position.z); pivot.add(handle);
+    const glassG = drop ? new THREE.Group() : null; if (glassG) { glassG.name = 'trunkglass'; ch.add(glassG); }
+    const gb = gl.length ? partBox(gl) : null;
+    Object.assign(pivot.userData, { drop, glassH: gb ? (gb.max.y - gb.min.y) * .95 : 0 });
+    trunk = { pivot, handle, glassG, a: 0, anim: undefined, drop, max: drop ? 1.5 : 1.2, set: new Set(tParts), gl: new Set(gl), glassH: pivot.userData.glassH, a0: Math.atan2(handle.position.y, -handle.position.z), grab: null };
+  }
   const addTo = (parent, gg, mat, p, off) => {
     if (off) gg.translate(-off.x, -off.y, -off.z);
     t1 += triCount(gg);
@@ -6802,14 +6991,21 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     if (glass && realDoors && isInt(p)) continue;                   // Innenseite der Scheiben: doppelt, würde die Sicht nur abdunkeln
     if (glass && !isInt(p) && /windshield|windscreen|frontscheibe/i.test(p.name) && !/rear|heck/i.test(p.name)) wsGeo = p.geo.clone();   // Frontscheibe: für Regentropfen + Wischer
     const mat = isBody(p) ? c.bodyMat : glass ? c.glassMat : p.mat;
+    if (trunk?.set.has(p)) { if (trunk.gl.has(p)) addTo(trunk.glassG, simp(p.geo, p).clone(), mat, p); else addTo(trunk.pivot, simp(p.geo, p).clone(), mat, p, trunk.pivot.position); continue; }
     const d = doorOf.get(p);
     if (d) { addTo(d.pivot, simp(p.geo, p).clone(), mat, p, d.pivot.position); continue; }
     if (realDoors) { for (const gg of chunks(simp(p.geo, p))) addTo(ch, gg, mat, p); continue; }
-    const thr = glass ? .5 : isInner(p) ? .7 : .74;
-    const inDoor = (x, y, z) => DX * x > halfW * thr && z < zF && z > zR && y > .22 && y < top * (glass ? .94 : .9);
-    const [keep, door] = AS.splitGeometry(p.geo, inDoor);
-    if (keep.attributes.position.count) addTo(ch, simp(keep, p), mat, p);
-    if (door.attributes.position.count) addTo(drv.pivot, simp(door, p), mat, p, drv.pivot.position);
+    const thr = glass ? .5 : isInner(p) ? .7 : .74; let rest = p.geo;
+    for (const dd of doors) {
+      const s = dd.side, inDoor = (x, y, z) => s * x > halfW * thr && z < zF && z > zR && y > .22 && y < top * (glass ? .94 : .9);
+      const [keep, door] = AS.splitGeometry(rest, inDoor); rest = keep;
+      if (door.attributes.position.count) { if (!glass && !isInner(p)) dd.cut.push({ geo: door.clone() }); addTo(dd.pivot, simp(door, p), mat, p, dd.pivot.position); }
+    }
+    if (rest.attributes.position.count) addTo(ch, simp(rest, p), mat, p);
+  }
+  if (!realDoors) for (const d of doors) if (d.cut?.length) {         // ausgeschnittene Tür: Griff auf die echte Außenhaut der Tür setzen (nicht in die Luft)
+    const nb = new THREE.Box3(); d.cut.forEach(e => { e.geo.computeBoundingBox(); nb.union(e.geo.boundingBox); });
+    const hp = skinHandle(d.cut, nb, d.side); if (hp) setHandle(d, hp); addBar(d);
   }
   // kein Lenkrad im Modell gefunden -> eigenes einsetzen
   if (!steer.length) { const dark = M(0x151515, { roughness: .6 }); ws.add(new THREE.Mesh(new THREE.TorusGeometry(.18, .022, 10, 32), dark)); box(.34, .03, .02, dark, 0, -.02, 0, ws); box(.03, .16, .02, dark, 0, -.1, 0, ws); }
@@ -6880,7 +7076,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
       for (const gg of chunks(merged)) { const m = new THREE.Mesh(gg, mat); m.userData.inner = inner; m.userData.outer = outer; parent.add(m); }
     }
   };
-  mergeIn(ch); mergeIn(ws); doors.forEach(d => mergeIn(d.pivot, true));
+  mergeIn(ch); mergeIn(ws); doors.forEach(d => mergeIn(d.pivot, true)); if (trunk) mergeIn(trunk.pivot, true);
   for (const w of Object.values(wheels)) { mergeIn(w.steer); mergeIn(w.spin); }
   if (VEHICLES.find(v => v.id === id)?.emerg === 'police') applyPoliceLivery(c, vis, ch, doors, top, drv.box.getCenter(V()).z);   // Polizeiauto: weißer Lack, Schriftzug, Blaulicht
   // Fensterscheiben in den Türen (zum Runterlassen): fahren um ihre eigene Höhe in die Tür
@@ -6942,7 +7138,7 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   c.group.remove(c.vis); c.vis = vis; c.chassis = ch; c.group.add(vis); c.sirenMats = undefined;
   const dz = drv.box.getCenter(V()).z;
   Object.assign(c, {
-    doors, wheelBase: wb, wheelSpin: ws, wheelR: steer.length ? partBox(steer).getSize(V()).x / 2 : .18,
+    doors, trunk, wheelBase: wb, wheelSpin: ws, wheelR: steer.length ? partBox(steer).getSize(V()).x / 2 : .18,
     holder, DX, wheels: Object.values(wheels), seats,
     head: eye, seatHint: V(DX * (halfW + .4), 1.0, dz), exitPos: V(DX * (halfW + 1), 0, dz),
     half: V(halfW, top, bb.max.z),
@@ -7223,7 +7419,7 @@ Promise.all(['asphalt_02', 'concrete_pavers', 'aerial_grass_rock', 'clay_roof_ti
 // Spiel-Loop
 // ===================================================================
 setPhone('pocket');
-initShop();                                                             // Essen + Getränke auf die Verkaufstische legen
+initShop(); initCarts();                                                // Essen + Getränke auf die Verkaufstische legen, Einkaufswagen an den Eingang
 // Handy einmal vorbereiten (Shader + Bildschirm), damit das erste A-Drücken nicht hängt
 phoneG.visible = true; composePhone(); renderer.compile(scene, camera); phoneG.visible = false;
 desk.yaw = Math.PI / 2;
@@ -7333,4 +7529,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, get money() { return money; }, set money(v) { money = v; } };

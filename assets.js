@@ -90,10 +90,26 @@ export const loadTex = (id, aniso) => track(polyTex(id, aniso));
 export const cloneSkinned = o => SkeletonUtils.clone(o);
 
 // Alle Meshes in Wurzel-Koordinaten "backen"
+// bone = Knochen, an dem das Teil hängt (bei Modellen mit Skelett, z.B. Tür-Knochen) · path = Namen der Eltern-Knoten
 export function flatten(root) {
   root.updateMatrixWorld(true);
   const out = [];
-  root.traverse(o => { if (o.isMesh) { const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld); out.push({ name: o.name, geo: g, mat: o.material }); } });
+  root.traverse(o => {
+    if (!o.isMesh) return;
+    const g = o.geometry.clone(); g.applyMatrix4(o.matrixWorld);
+    let bone = null;
+    if (o.isSkinnedMesh && g.attributes.skinIndex && o.skeleton) {
+      const si = g.attributes.skinIndex, sw = g.attributes.skinWeight, cnt = {}, step = Math.max(1, Math.floor(si.count / 48));
+      for (let i = 0; i < si.count; i += step) {
+        let bi = si.getX(i), bw = sw.getX(i);
+        for (const [j, w] of [[si.getY(i), sw.getY(i)], [si.getZ(i), sw.getZ(i)], [si.getW(i), sw.getW(i)]]) if (w > bw) { bw = w; bi = j; }
+        cnt[bi] = (cnt[bi] || 0) + 1;
+      }
+      const top = Object.entries(cnt).sort((a, b) => b[1] - a[1])[0]; bone = top ? o.skeleton.bones[top[0]]?.name || null : null;
+    }
+    const path = []; for (let p = o.parent; p; p = p.parent) if (p.name) path.push(p.name);
+    out.push({ name: o.name, geo: g, mat: o.material, bone, path });
+  });
   return out;
 }
 
