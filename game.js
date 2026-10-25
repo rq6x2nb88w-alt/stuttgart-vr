@@ -2063,8 +2063,15 @@ function drawApp() {
     g.beginPath(); g.arc(hx, PH - 170, 42, 0, 7); g.fillStyle = '#ff3b30'; g.fill(); icon(g, 'x', hx, PH - 170);
     btn(hx - 60, PH - 230, 120, 140, 'hangup');
   }
-  tx(g, hhmm(), 28, 26, 18, '#fff', 'left'); tx(g, 'Telekom 4G   23%', PW - 20, 26, 15, '#fff', 'right');
-  if (!['incoming', 'incall', 'outgoing'].includes(a)) { rr(g, PW / 2 - 60, PH - 16, 120, 6, 3, '#fff'); if (a !== 'home') btn(0, PH - 48, PW, 48, 'app:home'); }
+  // Anruf läuft im Hintergrund (andere App offen): grüne Kapsel oben links mit Gesprächsdauer, antippen = zurück zum Anruf
+  const bgCall = phone.call && ['active', 'dial'].includes(phone.call.state) && !['incall', 'outgoing', 'incoming'].includes(a);
+  if (bgCall) {
+    const s = Math.floor(time - phone.call.t0), lbl = phone.call.state === 'dial' ? 'Wählt' : Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    rr(g, 10, 9, 98, 32, 16, '#34c759'); icon(g, phone.call.vid ? 'camera' : 'tel', 29, 25, .32); tx(g, lbl, 44, 26, 15, '#fff', 'left', 800);
+    btn(0, 0, 140, 52, phone.call.state === 'dial' ? 'app:outgoing' : 'app:incall');
+  } else tx(g, hhmm(), 28, 26, 18, '#fff', 'left');
+  tx(g, 'Telekom 4G   23%', PW - 20, 26, 15, '#fff', 'right');
+  if (a !== 'incoming') { rr(g, PW / 2 - 60, PH - 16, 120, 6, 3, '#fff'); if (a !== 'home') btn(0, PH - 48, PW, 48, 'app:home'); }   // auch im Anruf: nach Hause wischen, Anruf läuft weiter
   // Mitteilung oben (z.B. "Auto verbunden")
   const N0 = phone.notif;
   if (N0 && time < N0.until) {
@@ -2201,8 +2208,9 @@ function phoneAction(a) {
 function endCall(text) {
   ring.pause(); ring.currentTime = 0; phone.seq = null; phone.anim = null;
   if (phone.call) callAudio(phone.call.id, false);
-  if (text && phone.call) { phone.call.state = 'offline'; phone.call.text = text; phone.drawT = 0; const c = phone.call; setTimeout(() => { if (phone.call === c) { phone.call = null; openApp('home'); } }, 2000); return; }
-  phone.call = null; phone.seq = null; openApp('home');
+  const onCallScr = () => ['incall', 'outgoing', 'incoming'].includes(phone.app);   // nur vom Anruf-Bildschirm weg – eine andere offene App bleibt offen
+  if (text && phone.call) { phone.call.state = 'offline'; phone.call.text = text; phone.drawT = 0; const c = phone.call; setTimeout(() => { if (phone.call === c) { phone.call = null; if (onCallScr()) openApp('home'); else phone.drawT = 0; } }, 2000); return; }
+  phone.call = null; phone.seq = null; if (onCallScr()) openApp('home'); else phone.drawT = 0;
 }
 // B mit dem Handy in der Hand: das Handy bleibt genau dort in der Luft stehen (z.B. zum Filmen beim Videoanruf).
 // Zurück in die Hand: greifen oder A (PC: P) – dann fliegt es zu dir.
@@ -6683,7 +6691,7 @@ function onNet(m) {
   if (m.t === 'sig') {
     if (m.rtc) onRTC(p, m.rtc);
     if (m.call === 'ring') { if (phone.call || phone.seq) netSig(p.id, { call: 'busy' }); else startIncoming(p.name, p.id, !!m.v); }
-    if (m.call === 'accept' && phone.call?.id === p.id) { phone.call.state = 'active'; phone.call.t0 = time; openApp('incall', false); callAudio(p.id, true); }
+    if (m.call === 'accept' && phone.call?.id === p.id) { phone.call.state = 'active'; phone.call.t0 = time; if (phone.app === 'outgoing') openApp('incall', false); callAudio(p.id, true); }
     if (m.call === 'busy' && phone.call?.id === p.id) endCall('Besetzt');
     if (m.call === 'end' && phone.call?.id === p.id) { if (phone.call.state === 'ring') phone.missed = p.name; endCall(phone.call.state === 'dial' ? 'Abgelehnt' : 'Aufgelegt'); }
     if (m.hit) onHit(m.hit, p);
@@ -6903,7 +6911,7 @@ function myState() {
   // CarPlay des Fahrers, damit Mitfahrer dasselbe auf den Displays sehen
   if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on && POI[nav.n] ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0, r: radio.on ? radio.st : -1, v: r2(save.vol) };
   st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
-  if (phone.call?.state === 'active' && phone.call.vid && phoneG.visible) st.vc = 1;   // Videoanruf: meine Kamera ist an
+  if (phone.call?.state === 'active' && phone.call.vid && phoneG.visible && phone.app === 'incall') st.vc = 1;   // Videoanruf: meine Kamera ist an (pausiert, solange eine andere App offen ist)
   if (save.vmax !== undefined) st.vm = save.vmax;                        // vom Admin festgelegtes Tempo (zeigt das Admin Panel)
   if (alarm.on) st.al = 1;                                              // Auto-Alarm (Licht + Hupe bei allen)
   // Im Auto: Kopf, Hände und Handy relativ zum Auto senden -> bei Tempo hängt nichts hinterher
@@ -7257,6 +7265,42 @@ function orientCar(parts, keepScale = false) {
   return bb;
 }
 const partBox = list => { const b = new THREE.Box3(); list.forEach(p => b.union(p.geo.boundingBox)); return b; };
+// Tür im Modell offen gebaut (Porsche: rechte Tür steht offen) -> um die vordere Kante zuklappen, bis sie wie die Tür
+// der anderen Seite an der Karosserie anliegt. Sonst sieht sie immer offen aus und das ganze Auto wird schief zentriert.
+function closeOpenDoors(parts) {
+  const map = new Map(); for (const p of parts) { const k = doorKeyOf(p.name); if (k) (map.get(k) || map.set(k, []).get(k)).push(p); }
+  if (!map.size) return false;
+  const tri = q => (q.geo.index ? q.geo.index.count : q.geo.attributes.position.count) / 3;
+  const body = parts.filter(p => /body|paint/i.test(p.mat.name || '') && !doorKeyOf(p.name)).sort((a, b) => tri(b) - tri(a))[0];   // größtes Karosserie-Teil
+  const bb = body ? body.geo.boundingBox.clone() : partBox(parts), cx = (bb.min.x + bb.max.x) / 2, hw = (bb.max.x - bb.min.x) / 2;
+  const axis = list => {                                                   // waagerechte Hauptrichtung des Türblatts (Winkel gegen die z-Achse)
+    const pts = []; for (const p of list) { const a = p.geo.attributes.position, st = Math.max(1, Math.floor(a.count / 500)); for (let i = 0; i < a.count; i += st) pts.push(a.getX(i), a.getZ(i)); }
+    const n = pts.length / 2; let mx = 0, mz = 0; for (let i = 0; i < pts.length; i += 2) { mx += pts[i]; mz += pts[i + 1]; } mx /= n; mz /= n;
+    let sxx = 0, szz = 0, sxz = 0; for (let i = 0; i < pts.length; i += 2) { const dx = pts[i] - mx, dz = pts[i + 1] - mz; sxx += dx * dx; szz += dz * dz; sxz += dx * dz; }
+    const ang = .5 * Math.atan2(2 * sxz, szz - sxx), ux = Math.sin(ang), uz = Math.cos(ang);
+    let t0 = 1e9, t1 = -1e9; for (let i = 0; i < pts.length; i += 2) { const t = (pts[i] - mx) * ux + (pts[i + 1] - mz) * uz; t0 = Math.min(t0, t); t1 = Math.max(t1, t); }
+    return { n, ang, A: [mx + ux * t0, mz + uz * t0], B: [mx + ux * t1, mz + uz * t1] };
+  };
+  const mirrorKey = k => k === 'F1' ? 'F2' : k === 'F2' ? 'F1' : k[0] + (k[1] === 'L' ? 'R' : 'L');
+  let changed = false;
+  for (const [k, list] of map) {
+    const ax = axis(list); if (ax.n < 20 || Math.abs(Math.sin(ax.ang)) < .3) continue;   // liegt an
+    const db0 = partBox(list).expandByScalar(.02);                         // Teile ohne Tür-Namen, die mit der offenen Tür draußen hängen (z.B. Türgriff), gehören dazu
+    for (const q of parts) if (!doorKeyOf(q.name) && db0.containsBox(q.geo.boundingBox) && Math.abs(q.geo.boundingBox.getCenter(V()).x - cx) > hw - .02) { q.name = (k[1] === '1' || k[1] === '2' ? 'door_' + k[1] : 'Door_' + k) + '_' + q.name; list.push(q); }
+    const [H, F] = Math.abs(ax.A[0] - cx) < Math.abs(ax.B[0] - cx) ? [ax.A, ax.B] : [ax.B, ax.A];   // Scharnier = Ende nah an der Karosserie
+    const th = Math.PI - Math.atan2(F[0] - H[0], F[1] - H[1]);            // so drehen, dass das Türblatt vom Scharnier nach hinten zeigt
+    const m = new THREE.Matrix4().makeTranslation(H[0], 0, H[1]).multiply(new THREE.Matrix4().makeRotationY(th)).multiply(new THREE.Matrix4().makeTranslation(-H[0], 0, -H[1]));
+    list.forEach(q => { q.geo.applyMatrix4(m); q.geo.computeBoundingBox(); });
+    const other = map.get(mirrorKey(k));                                   // genau an die Stelle der gespiegelten anderen Tür schieben
+    if (other && Math.abs(Math.sin(axis(other).ang)) < .3) {
+      const ob = partBox(other), db = partBox(list);
+      const tx = (2 * cx - (ob.min.x + ob.max.x) / 2) - (db.min.x + db.max.x) / 2, tz = (ob.min.z + ob.max.z) / 2 - (db.min.z + db.max.z) / 2;
+      if (Math.hypot(tx, tz) < .4) list.forEach(q => { q.geo.translate(tx, 0, tz); q.geo.computeBoundingBox(); });
+    }
+    changed = true;
+  }
+  return changed;
+}
 
 // Türen im Modell erkennen ("Door_FL", "door_rr" …) – Halter/Scharniere bleiben an der Karosserie
 const doorKeyOf = n => {
@@ -7343,7 +7387,9 @@ function carClone(vis) {
 function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   const c = own ? pcar : { fl: { mats: [], orig: [] } }, parts = AS.flatten(gltf.scene);
   nameCarParts(parts);
-  const bb = orientCar(parts, true), halfW = bb.max.x, top = bb.max.y;
+  let bb = orientCar(parts, true);
+  if (closeOpenDoors(parts)) bb = orientCar(parts, true);               // offen gebaute Tür zuklappen, dann neu zentrieren
+  const halfW = bb.max.x, top = bb.max.y;
   const triCount = gg => (gg.index ? gg.index.count : gg.attributes.position.count) / 3;
   const hasTex = m => m.map || m.normalMap || m.roughnessMap || m.metalnessMap || m.aoMap || m.emissiveMap;
   const isGlass = p => { const n = p.name + ' ' + (p.mat.name || ''); return /glass|window|scheibe/i.test(n) && !/light|lamp|red|orange|projector|reflector|chrome/i.test(n); };
@@ -7397,7 +7443,20 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   const DX = Math.sign(sc.x) || 1;                                   // Fahrerseite (+1 = links)
   const wheelParts = parts.filter(p => !steer.includes(p) && !doorKeyOf(p.name) && /(wheel|tire|tyre|(^|[^t])rim|brake|centre|nuts|reifen|felge)/i.test(p.name + ' ' + (p.mat.name || '')) && p.geo.boundingBox.max.y < top * .55);
   const tires = wheelParts.filter(p => /(tire|tyre|reifen)/i.test(p.name + ' ' + (p.mat.name || '')));
-  const frontZ = tires.length ? Math.max(...tires.map(p => p.geo.boundingBox.getCenter(V()).z)) : bb.max.z * .6;
+  // Teile über mehrere Räder (Porsche: alle 4 Reifen in einem Teil) links/rechts und vorne/hinten teilen
+  let pieces = wheelParts.map(p => ({ ...p, src: p }));
+  for (const [ax, lo, cut] of [['x', -.2, (x) => x > 0], ['z', -.4, (x, y, z) => z > 0]]) {
+    const out = [];
+    for (const p of pieces) {
+      const b = p.geo.boundingBox;
+      if (b.min[ax] < lo && b.max[ax] > -lo) { for (const gg of AS.splitGeometry(p.geo, cut)) if (gg.attributes.position.count) { gg.computeBoundingBox(); out.push({ ...p, geo: gg }); } }
+      else out.push(p);
+    }
+    pieces = out;
+  }
+  const qKey = c0 => (c0.x > 0 ? 'r' : 'l') + (c0.z > 0 ? 'f' : 'b'), tireBox = {};
+  for (const p of pieces) if (tires.includes(p.src)) { const k = qKey(p.geo.boundingBox.getCenter(V())); (tireBox[k] ||= new THREE.Box3()).union(p.geo.boundingBox); }
+  const frontZ = tireBox.lf || tireBox.rf ? (tireBox.lf || tireBox.rf).getCenter(V()).z : tires.length ? Math.max(...tires.map(p => p.geo.boundingBox.getCenter(V()).z)) : bb.max.z * .6;
   const zF = frontZ - .4, zR = zF - 1.15;
   c.brakeMat = c.headMat = null;
 
@@ -7408,17 +7467,11 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   c.glassMat = new THREE.MeshStandardMaterial({ color: 0x18202a, metalness: .9, roughness: .05, transparent: true, opacity: .45 });
   c.glassMat.userData.glass = true;                                    // (zum Wiederfinden in Kopien für andere Spieler)
   // Räder als Gruppen: lenken, drehen, federn (Teile über beide Seiten, z.B. hintere Bremse, werden geteilt)
-  const wheels = {}, pieces = [];
-  for (const p of wheelParts) {
-    const b = p.geo.boundingBox;
-    if (b.min.x < -.2 && b.max.x > .2) { for (const gg of AS.splitGeometry(p.geo, x => x > 0)) if (gg.attributes.position.count) { gg.computeBoundingBox(); pieces.push({ ...p, geo: gg }); } }
-    else pieces.push(p);
-  }
+  const wheels = {};
   for (const p of pieces) {
-    const ctr = p.geo.boundingBox.getCenter(V()), key = (ctr.x > 0 ? 'r' : 'l') + (ctr.z > 0 ? 'f' : 'b');
+    const ctr = p.geo.boundingBox.getCenter(V()), key = qKey(ctr);
     if (!wheels[key]) {
-      const t = tires.find(q => { const qc = q.geo.boundingBox.getCenter(V()); return Math.sign(qc.x) === Math.sign(ctr.x) && Math.sign(qc.z) === Math.sign(ctr.z); });
-      const wc = t ? t.geo.boundingBox.getCenter(V()) : ctr;
+      const wc = tireBox[key] ? tireBox[key].getCenter(V()) : ctr;        // Drehpunkt = Mitte des Reifens
       const steerG = new THREE.Group(); steerG.position.copy(wc); steerG.name = 'wheel'; Object.assign(steerG.userData, { front: wc.z > 0, outer: true }); vis.add(steerG);
       const spinG = new THREE.Group(); spinG.name = 'spin'; steerG.add(spinG);
       wheels[key] = { steer: steerG, spin: spinG, front: wc.z > 0, c: wc };
@@ -7497,9 +7550,15 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     const [low, front] = AS.splitGeometry(gg, (x, y, z) => z > z2), [rear, mid] = AS.splitGeometry(low, (x, y, z) => z > z1);
     return [rear, mid, front].filter(q => q.attributes.position.count).map(q => mergeVertices(q));
   };
+  // Eigene Bildschirme im Modell, die nicht "Display" heißen (Roadster: Hochkant-Tablet in der Mitte, Anzeige hinter dem Joch):
+  // das Tablet wird durch das CarPlay-Display ersetzt (vorher steckte es quer darin), das Mini-Display liegt auf der Anzeige hinter dem Lenkrad
+  const namedScr = parts.some(p => /display|screen|infotain/i.test(p.name + ' ' + (p.mat.name || '')));
+  const texScr = namedScr ? [] : parts.filter(p => p.mat.map && !isGlass(p) && !isBody(p) && !wheelParts.includes(p) && !steer.includes(p)).map(p => { const b = p.geo.boundingBox; return { p, c: b.getCenter(V()), s: b.getSize(V()) }; })
+    .filter(q => q.s.x > .1 && q.s.x < .4 && q.s.y > .06 && q.s.y < .35 && q.s.z < .25 && q.c.y > top * .4 && q.c.y < top * .85 && q.c.z > sc.z - .15 && q.c.z < sc.z + .45);
+  const mTablet = texScr.find(q => Math.abs(q.c.x) < .12 && q.s.y > q.s.x), mCluster = texScr.find(q => q !== mTablet && Math.abs(q.c.x - sc.x) < .15 && q.s.x > q.s.y);
   let wsGeo = null;
   for (const p of parts) {
-    if (wheelParts.includes(p)) continue;
+    if (wheelParts.includes(p) || p === mTablet?.p) continue;
     if (steer.includes(p)) { const g = simp(p.geo, p).clone().applyMatrix4(toWheel); t1 += triCount(g); ws.add(new THREE.Mesh(g, p.mat)); continue; }
     const glass = isGlass(p);
     if (glass && realDoors && isInt(p)) continue;                   // Innenseite der Scheiben: doppelt, würde die Sicht nur abdunkeln
@@ -7617,12 +7676,15 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M(0x050608, { roughness: .2 })); m.name = name; m.userData.screen = true;
     m.position.copy(hit && hit.distance < L + .06 ? from.clone().addScaledVector(dir, hit.distance - .03) : tgt); m.lookAt(eye); ch.add(m); return m;   // nicht weit hinter das Ziel rutschen
   };
-  if (!screen) screen = { m: placeScreen(V(0, sc.y - .02, sc.z + .2), .28, .14, 'Display_main_extra', V(0, eye.y, eye.z)) };   // Strahl aus der Mitte zwischen den Sitzen (nicht durchs Lenkrad)
+  const ownScr = (q, w, h, name) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M(0x050608, { roughness: .2 })); m.name = name; m.userData.screen = true; m.position.copy(q.c).addScaledVector(eye.clone().sub(q.c).normalize(), q.s.z / 2 + .006); m.lookAt(eye); ch.add(m); return m; };
+  if (!screen && mTablet) screen = { m: ownScr(mTablet, .26, .13, 'Display_main_extra') };   // an Stelle des Modell-Tablets
+  if (!screen) screen = { m: placeScreen(V(0, Math.min(sc.y - .02, eye.y - .2), sc.z + .2), .28, .14, 'Display_main_extra', V(0, eye.y, eye.z)) };   // nie in der Sichtlinie   // Strahl aus der Mitte zwischen den Sitzen (nicht durchs Lenkrad)
   c.screen = screen.m;
   // zweites Display hinter dem Lenkrad (das dem Lenkrad am nächsten liegt) – fehlt es, kommt ein Mini-Display über die Nabe
   let cluster = null;
   ch.traverse(o => { if (o.isMesh && o.userData.screen && o !== c.screen) { o.geometry.computeBoundingBox(); const d = Math.abs(o.geometry.boundingBox.getCenter(V()).x - sc.x); if (!cluster || d < cluster.d) cluster = { m: o, d }; } });
-  if (!cluster) cluster = { m: placeScreen(V(sc.x, sc.y + .08, sc.z + .26), .22, .073, 'Display_cluster_extra') };
+  if (!cluster && mCluster) { const w = Math.min(.24, mCluster.s.x * .9); cluster = { m: ownScr(mCluster, w, w / 3, 'Display_cluster_extra') }; }   // auf der Anzeige hinter dem Lenkrad
+  if (!cluster) cluster = { m: placeScreen(V(sc.x, Math.min(sc.y + .08, eye.y - .15), sc.z + .26), .22, .073, 'Display_cluster_extra') };
   c.cluster = cluster ? cluster.m : null;
   if (trunk) {                                                           // Laderaum unter dem Deckel / hinter der Rückbank (Boden per Strahl nach unten)
     const tb = trunk.box, cz = trunk.drop ? tb.min.z + .45 : (tb.min.z + tb.max.z) / 2, sy = trunk.drop ? (tb.min.y + tb.max.y) / 2 : tb.max.y + .05;

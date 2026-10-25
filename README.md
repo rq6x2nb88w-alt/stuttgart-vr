@@ -37,6 +37,7 @@ node server.js
 - **Admin**: Konto eines Spielers (oder das eigene) auf 0 € setzen
 - **Handy im Auto vergessen**: A drücken – es fliegt zu deiner Hand. Mitfahrer hören das Radio des Fahrers
 - **Videoanruf**: in der Telefon-App den blauen Kamera-Knopf neben dem Spieler drücken (oder im Gespräch „Kamera an“). Du siehst die andere Person, gefilmt von der Frontkamera ihres Handys, oben rechts klein dich selbst
+- **Im Anruf andere Apps nutzen**: unten nach Hause wischen bzw. Home-Leiste – das Gespräch läuft weiter, oben links zeigt eine grüne Kapsel die Dauer (antippen = zurück zum Anruf)
 - **Handy in der Luft stehen lassen**: Handy in der Hand + **B** (PC: B) – es bleibt genau dort schweben (z. B. zum Filmen beim Videoanruf). Zurück: greifen oder A (PC: P)
 - **Bank**: Kontostand, Geld an andere Spieler überweisen, letzte Buchungen
 - **Essen bestellen** (App „Essen“): Produkte wählen, Kauf bestätigen – eine Fahrerin kommt mit dem E-Scooter (Live-Tracker auf der Karte), klingelt an deiner Haustür (ohne Haus: dort, wo du bestellt hast) und hält dir den Scanner hin: Handy ans NFC-Feld = bezahlt, dann das Essen aus ihrer Hand nehmen. Liefergebühr 2,50 €
