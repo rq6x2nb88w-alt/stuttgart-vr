@@ -29,7 +29,7 @@ node server.js
 - **Neue Autos**: Porsche 911, Jeep Grand Wagoneer, **Tesla Roadster** (200.000 € – am Auto-Display „Raumflug“: R-Trigger Schub, L-Trigger Bremse, linker Stick hoch/runter; PC: R/V) sowie **Polizei**, **Feuerwehr** (Wasserwerfer löscht Brände) und **Krankenwagen** mit Blaulicht + Sirene
 - **Hunger + Durst**: zwei Balken auf dem Handy. Im Supermarkt / an der Tankstelle Essen und Getränke vom Tisch greifen, aufs Kassenband legen, Handy rausholen und ans **NFC-Feld** halten (Liquid-Glass-Fenster mit Kontostand → Haken). Essen an den Mund = essen, Flasche kippen = trinken (PC: Q = aufheben, Maustaste halten = essen/trinken)
 - **Türen + Kofferraum**: alle Autos haben greifbare Türgriffe (Jeep: 4 echte Türen, Porsche: 2, Roadster: beide Türen). Kofferraum am Griff hochziehen oder am Auto-Display „Kofferraum“ (PC: K) – Jetta/Polizei: Deckel, Jeep: Scheibe fährt runter, Klappe klappt runter
-- **Kofferraum als Stauraum**: Kofferraum öffnen, Essen/Getränke hineinlegen – sie fahren mit und bleiben gespeichert (auch nach dem Neuladen, je Auto) – andere Spieler sehen, was drin liegt
+- **Kofferraum als Stauraum**: Kofferraum öffnen, Essen/Getränke hineinlegen – sie fahren mit und bleiben gespeichert (auch nach dem Neuladen, je Auto) – andere Spieler sehen, was drin liegt, und können es bei offenem Kofferraum herausnehmen (Grip, PC: Q)
 - **Fremder Kofferraum**: ist ein Auto entsperrt (Display: „Türen offen“), können auch andere den Kofferraum am Griff (PC: K) öffnen und schließen
 - **Im Jeep-Kofferraum mitfahren**: zwei zusätzliche Plätze auf dem Ladeboden, Blick nach hinten raus – hinten am Jeep A drücken (PC: F), Aussteigen mit B (PC: F) hinter dem Auto
 - **Displays**: jedes Auto hat ein Hauptdisplay und ein Mini-Display hinter dem Lenkrad (fehlen sie im Modell, werden sie sichtbar vor das Armaturenbrett gesetzt)
@@ -37,6 +37,7 @@ node server.js
 - **Admin**: Konto eines Spielers (oder das eigene) auf 0 € setzen
 - **Handy im Auto vergessen**: A drücken – es fliegt zu deiner Hand. Mitfahrer hören das Radio des Fahrers
 - **Bank**: Kontostand, Geld an andere Spieler überweisen, letzte Buchungen
+- **Essen bestellen** (App „Essen“): Produkte wählen, Kauf bestätigen – eine Fahrerin kommt mit dem E-Scooter (Live-Tracker auf der Karte), klingelt an deiner Haustür (ohne Haus: dort, wo du bestellt hast) und hält dir den Scanner hin: Handy ans NFC-Feld = bezahlt, dann das Essen aus ihrer Hand nehmen. Liefergebühr 2,50 €
 - **Einstellungen**: Klingelton wählen (antippen = Vorschau). Eigene Töne: mp3-Dateien in `assets/klingeltoene/` legen
 - Keine Text-Einblendungen im Blickfeld – Geld, Hunger, Durst und Fahndungssterne stehen auf dem Handy.
 - Tag und Nacht (ein Tag = 40 Minuten). Geld, Haus, Hund, Tuning, Tank und Galerie werden gespeichert.

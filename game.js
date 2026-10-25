@@ -1770,6 +1770,7 @@ function icon(g, kind, x, y, s = 1) {
   if (kind === 'bank') { g.beginPath(); g.moveTo(0, -24); g.lineTo(24, -10); g.lineTo(-24, -10); g.closePath(); g.fill(); for (const x of [-16, -5.5, 5.5, 16]) g.fillRect(x - 3, -6, 6, 20); g.fillRect(-24, 16, 48, 6); }
   if (kind === 'set') { g.lineWidth = 7; for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; g.beginPath(); g.moveTo(Math.cos(a) * 12, Math.sin(a) * 12); g.lineTo(Math.cos(a) * 23, Math.sin(a) * 23); g.stroke(); } g.beginPath(); g.arc(0, 0, 15, 0, 7); g.fill(); g.fillStyle = '#607d8b'; g.beginPath(); g.arc(0, 0, 7, 0, 7); g.fill(); }
   if (kind === 'money') { g.beginPath(); g.roundRect(-26, -15, 52, 30, 5); g.fill(); g.fillStyle = '#1b5e20'; g.beginPath(); g.arc(0, 0, 9, 0, 7); g.fill(); g.fillStyle = '#fff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('€', 0, 1); }
+  if (kind === 'food') { g.beginPath(); g.arc(0, -3, 22, Math.PI, 0); g.closePath(); g.fill(); g.fillRect(-24, 3, 48, 6); g.beginPath(); g.roundRect(-22, 12, 44, 10, 5); g.fill(); }   // Burger
   if (kind === 'power') { g.lineWidth = 5; g.beginPath(); g.arc(0, 2, 17, -Math.PI * .3, Math.PI * 1.3); g.stroke(); g.beginPath(); g.moveTo(0, -22); g.lineTo(0, 2); g.stroke(); }
   if (kind === 'jet') { g.beginPath(); g.moveTo(0, -26); g.quadraticCurveTo(14, -10, 11, 12); g.lineTo(-11, 12); g.quadraticCurveTo(-14, -10, 0, -26); g.fill(); g.fillStyle = '#00838f'; g.beginPath(); g.arc(0, -6, 5, 0, 7); g.fill(); g.fillStyle = '#ffb300'; g.beginPath(); g.moveTo(-7, 14); g.lineTo(7, 14); g.lineTo(0, 28); g.closePath(); g.fill(); g.fillStyle = '#fff'; g.beginPath(); g.moveTo(-11, 4); g.lineTo(-19, 14); g.lineTo(-11, 12); g.fill(); g.beginPath(); g.moveTo(11, 4); g.lineTo(19, 14); g.lineTo(11, 12); g.fill(); }
   if (kind === 'trunk') { g.beginPath(); g.moveTo(-26, 12); g.lineTo(-26, 2); g.lineTo(-14, -6); g.lineTo(10, -6); g.lineTo(18, 2); g.lineTo(26, 2); g.lineTo(26, 12); g.closePath(); g.fill(); g.lineWidth = 5; g.beginPath(); g.moveTo(18, 2); g.lineTo(28, -18); g.stroke(); g.fillStyle = '#6d4c41'; for (const x of [-15, 15]) { g.beginPath(); g.arc(x, 13, 6, 0, 7); g.fill(); } }
@@ -1791,7 +1792,7 @@ function drawApp() {
     tx(g, new Date().toLocaleDateString('de-DE', { weekday: 'long', day: 'numeric', month: 'long' }), PW / 2, 162, 19);
     const apps = [['GPS', '#2fa84f', 'gps'], ['Kamera', '#555', 'camera'], ['Telefon', '#2fc14f', 'tel'], ['Galerie', '#f39c12', 'gal'],
       ['Garage', '#3b6fd8', 'garage'], ['Missionen', '#d8402b', 'mis'], ['Jobs', '#6d4c41', 'jobs'], ['Chat', '#00897b', 'chat'],
-      ['Immobilien', '#5e35b1', 'immo'], ['Tiere', '#ef6c00', 'tiere'], ['Bank', '#1b5e20', 'bank'], ['Einstellung', '#607d8b', 'set']];
+      ['Immobilien', '#5e35b1', 'immo'], ['Tiere', '#ef6c00', 'tiere'], ['Bank', '#1b5e20', 'bank'], ['Einstellung', '#607d8b', 'set'], ['Essen', '#e65100', 'food']];
     if (isAdmin()) apps.push(['Admin', '#b3001b', 'admin']);             // nur für Gabriel
     apps.forEach(([n, c, id], i) => {
       const k = ease((at - i * .07) / .35); if (k <= 0) return;
@@ -1904,6 +1905,7 @@ function drawApp() {
     });
     if (!net.players.size) tx(g, 'Sonst ist gerade niemand online', PW / 2, 318, 14, '#90a4ae');
     rr(g, 14, PH - 104, PW - 28, 46, 14, '#37474f'); tx(g, '← Admin Panel', PW / 2, PH - 81, 17, '#fff', 'center', 700); btn(14, PH - 104, PW - 28, 46, 'app:admin');
+  } else if (a === 'food') { drawFood(g);
   } else if (a === 'admspeed') {
     // Admin: Höchstgeschwindigkeit der Autos festlegen (Tempo wählen, dann Spieler antippen) – "Normal" = wieder wie das Motor-Tuning
     rr(g, 0, 56, PW, 80, 0, '#4a148c'); tx(g, 'Auto-Tempo', 24, 88, 28, '#fff', 'left', 800); tx(g, 'Höchstgeschwindigkeit in km/h festlegen', 24, 118, 13, '#e1bee7', 'left', 500);
@@ -2064,6 +2066,7 @@ function phoneRate() {
   if (phone.notif && time < phone.notif.until) return 1 / 20;
   if (a === 'incoming') return 1 / 20;
   if (a === 'gps' || a === 'view') return 1 / 15;
+  if (a === 'food' && deli.o) return 1 / 10;                                     // Live-Tracker
   if (a === 'incall' || a === 'outgoing' || (a === 'camera' && rec.active)) return 1 / 6;
   return 1 / 2;                                                                    // ruhige Bildschirme (Uhr, Listen)
 }
@@ -2089,15 +2092,7 @@ function drawMap(g) {
   g.save(); g.beginPath(); g.rect(0, 50, PW, 560); g.clip();
   g.fillStyle = '#d9d4c7'; g.fillRect(0, 50, PW, 560);
   const X = x => cx + (x - px) * S, Y = z => cy + (z - pz) * S;
-  const col = { downtown: '#b9b4ab', apts: '#c8c1b4', houses: '#d6cdb9', school: '#e3c38f', tank: '#f1d36b', market: '#e3a7a7', park: '#9bc58a' };
-  for (const b of blocks) { g.fillStyle = col[b.type]; g.fillRect(X(b.cx - BLOCK / 2), Y(b.cz - BLOCK / 2), BLOCK * S, BLOCK * S); }
-  g.strokeStyle = '#fff'; g.lineWidth = ROAD * S;
-  for (const r of R) { g.beginPath(); g.moveTo(X(r), Y(-HALF - 8)); g.lineTo(X(r), Y(HALF + 8)); g.stroke(); g.beginPath(); g.moveTo(X(-HALF - 8), Y(r)); g.lineTo(X(HALF + 8), Y(r)); g.stroke(); }
-  g.beginPath(); g.moveTo(X(R[3]), Y(HALF)); g.lineTo(X(R[3]), Y(HZ)); g.stroke();
-  g.strokeStyle = '#f2a33a'; g.lineWidth = Math.max(4, 26 * S); g.beginPath(); g.moveTo(X(-TS / 2), Y(HZ)); g.lineTo(X(TS / 2), Y(HZ)); g.stroke();
-  g.beginPath(); g.moveTo(X(HX), Y(-TS / 2)); g.lineTo(X(HX), Y(HZ)); g.stroke();
-  g.strokeStyle = '#fff'; g.lineWidth = Math.max(3, 9 * S); g.beginPath(); mroadPts.forEach((p, i) => i ? g.lineTo(X(p.x), Y(p.z)) : g.moveTo(X(p.x), Y(p.z))); g.stroke();
-  g.beginPath(); g.moveTo(X(HALF + 8), Y(R[4])); g.lineTo(X(HX), Y(R[4])); g.stroke();
+  mapBase(g, X, Y, S);
   if (mission) { const tg = mission.car ? [mission.car.group.position.x, mission.car.group.position.z] : mission.pts[mission.step]; if (tg) { g.beginPath(); g.arc(X(tg[0]), Y(tg[1]), 9 + Math.sin(time * 6) * 3, 0, 7); g.fillStyle = '#ffd21a'; g.fill(); } }
   for (const [n, [x, z]] of Object.entries(POI)) { g.beginPath(); g.arc(X(x), Y(z), 7, 0, 7); g.fillStyle = '#2b6cff'; g.fill(); tx(g, n, X(x), Y(z) - 16, 13, '#123'); }
   if (vil.ped) { const q = vil.ped.root.position; g.beginPath(); g.arc(X(q.x), Y(q.z), 9 + Math.sin(time * 8) * 3, 0, 7); g.fillStyle = '#e01010'; g.fill(); tx(g, 'Angreifer', X(q.x), Y(q.z) - 18, 13, '#900', 'center', 800); }
@@ -2120,6 +2115,19 @@ function drawMap(g) {
   });
 }
 
+// Grundkarte: Blöcke, Straßen, Autobahnen (X/Y = Welt -> Bildschirm, S = Maßstab)
+function mapBase(g, X, Y, S) {
+  const col = { downtown: '#b9b4ab', apts: '#c8c1b4', houses: '#d6cdb9', school: '#e3c38f', tank: '#f1d36b', market: '#e3a7a7', park: '#9bc58a' };
+  for (const b of blocks) { g.fillStyle = col[b.type]; g.fillRect(X(b.cx - BLOCK / 2), Y(b.cz - BLOCK / 2), BLOCK * S, BLOCK * S); }
+  g.strokeStyle = '#fff'; g.lineWidth = ROAD * S;
+  for (const r of R) { g.beginPath(); g.moveTo(X(r), Y(-HALF - 8)); g.lineTo(X(r), Y(HALF + 8)); g.stroke(); g.beginPath(); g.moveTo(X(-HALF - 8), Y(r)); g.lineTo(X(HALF + 8), Y(r)); g.stroke(); }
+  g.beginPath(); g.moveTo(X(R[3]), Y(HALF)); g.lineTo(X(R[3]), Y(HZ)); g.stroke();
+  g.strokeStyle = '#f2a33a'; g.lineWidth = Math.max(4, 26 * S); g.beginPath(); g.moveTo(X(-TS / 2), Y(HZ)); g.lineTo(X(TS / 2), Y(HZ)); g.stroke();
+  g.beginPath(); g.moveTo(X(HX), Y(-TS / 2)); g.lineTo(X(HX), Y(HZ)); g.stroke();
+  g.strokeStyle = '#fff'; g.lineWidth = Math.max(3, 9 * S); g.beginPath(); mroadPts.forEach((p, i) => i ? g.lineTo(X(p.x), Y(p.z)) : g.moveTo(X(p.x), Y(p.z))); g.stroke();
+  g.beginPath(); g.moveTo(X(HALF + 8), Y(R[4])); g.lineTo(X(HX), Y(R[4])); g.stroke();
+}
+
 function phoneAction(a) {
   playAt(SND.tap, headWorld, .4);
   if (a.startsWith('app:')) return openApp(a.slice(4));
@@ -2137,6 +2145,12 @@ function phoneAction(a) {
   if (a.startsWith('aamt:')) { bank.admAmt = ADM_STEPS[+a.slice(5)]; return; }
   if (a.startsWith('gift:')) { adminGive(+a.slice(5)); return; }
   if (a.startsWith('zero:')) { adminZero(+a.slice(5)); return; }
+  if (a.startsWith('fd+:')) { const k = a.slice(4); deli.cart[k] = Math.min(9, (deli.cart[k] || 0) + 1); return; }
+  if (a.startsWith('fd-:')) { const k = a.slice(4); if (deli.cart[k] > 1) deli.cart[k]--; else delete deli.cart[k]; return; }
+  if (a === 'fdorder') { deli.ask = time; return; }
+  if (a === 'fdcancel') { deli.ask = -99; return; }
+  if (a === 'fdok') { if (time - deli.ask > .8 && time - deli.ask < 15) deliOrder(); return; }
+  if (a === 'fdstorno') { deliEnd('Bestellung storniert'); return; }
   if (a.startsWith('avel:')) { bank.admV = ADM_SPEEDS[+a.slice(5)]; return; }
   if (a.startsWith('vmx:')) { adminSpeed(+a.slice(4)); return; }
   if (a.startsWith('bamt:')) { bank.amt = BANK_STEPS[+a.slice(5)]; return; }
@@ -3922,6 +3936,7 @@ function tryGrab(h) {
   if (dashGrab(h, p)) return;                                            // heruntergefallene Dashcam aufheben
   { const itg = nearestItem(p, .22); if (itg) { holdItem(itg, h); return; } }   // Essen / Getränke aus dem Regal nehmen
   { const cg = nearestCartHandle(p, .16); if (cg) { h.held = { type: 'cart', cart: cg }; cg.held = h; haptic(h, .3, 40); return; } }   // Einkaufswagen am Griff schieben
+  { const rt = nearRemoteTrunkItem(p, .2); if (rt) { takeRemoteItem(rt, h); return; } }   // aus dem offenen Kofferraum eines anderen Spielers nehmen
   if (!seated() && !rob.spot) { const s = robNear(p, .55); if (s) { h.held = { type: 'rob' }; robStart(s, h); haptic(h, .5, 60); return; } }   // Kasse/Automat ausrauben (Grip halten)
   let best = null, bd = .25;
   for (const t of TOOLS) { if (t.heldBy) continue; const d = t.obj.getWorldPosition(v1).distanceTo(p); if (d < bd) { bd = d; best = t; } }
@@ -5222,6 +5237,9 @@ function deskItemToggle() {
   if (heldDesk) { const it = heldDesk; heldDesk = null; const w = it.mesh.getWorldPosition(V()), q = it.mesh.getWorldQuaternion(new THREE.Quaternion()); scene.add(it.mesh); it.mesh.position.copy(w); it.mesh.quaternion.copy(q); it.held = null; it.rest = false; camera.getWorldDirection(v1); it.v.copy(v1).multiplyScalar(1.4); return; }
   camera.getWorldDirection(v1); let best = null, bd = .93;
   for (const it of shopItems) { if (it.held) continue; const d = v2.copy(it.mesh.getWorldPosition(v3)).sub(headWorld); const L = d.length(); if (L > 2.5) continue; const dot = d.divideScalar(L).dot(v1); if (dot > bd) { bd = dot; best = it; } }
+  let rem = null;                                                          // Ware im offenen Kofferraum eines anderen Spielers
+  for (const pl of net.players.values()) if (pl.tiMeshes?.length && (pl.st?.tk || 0) >= .3) for (const m of pl.tiMeshes) { if (!m.visible) continue; const d = v2.copy(m.getWorldPosition(v3)).sub(headWorld), L = d.length(); if (L > 2.5) continue; const dot = d.divideScalar(L).dot(v1); if (dot > bd) { bd = dot; best = null; rem = { p: pl, i: m.userData.ti, type: m.userData.type, m }; } }
+  if (rem) { takeRemoteItem(rem, 'desk'); return; }
   const pushing = carts.find(c => c.held === 'desk');
   if (!best && pushing) { pushing.held = null; msg('Einkaufswagen losgelassen', 1.5); return; }
   if (!best) {                                                             // kein Artikel im Blick: Einkaufswagen in der Nähe schieben
@@ -5229,7 +5247,10 @@ function deskItemToggle() {
     if (cb) { cb.held = 'desk'; msg('Einkaufswagen schieben – Q = loslassen, Ware mit Q hineinwerfen', 3); }
     return;
   }
-  const it = best; outOfCart(it); outOfTrunk(it); if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
+  deskHold(best);
+}
+function deskHold(it) {                                                    // PC: Ware unten rechts ins Bild nehmen
+  outOfCart(it); outOfTrunk(it); if (it.lane) { it.lane.items = it.lane.items.filter(q => q !== it); it.lane.dirty = true; it.lane = null; }
   if (it.slot?.item === it) { it.slot.item = null; it.slot.t = 0; }
   camera.add(it.mesh); it.mesh.position.set(.17, -.17, -.4); it.mesh.rotation.set(0, 0, 0); it.mesh.scale.setScalar(1 - Math.min(.72, it.eatT / 2.6 * .75)); it.held = 'desk'; it.rest = false; heldDesk = it; tagItem = it; tagUntil = time + 2;
   playAt(SND.thump, headWorld, .3, 2);
@@ -5262,11 +5283,12 @@ function doPay(P) {
   for (const it of L.all || L.items) it.paid = true; L.items = []; L.cartItems = []; L.all = []; L.total = 0;
   save.st.shop = (save.st.shop || 0) + 1; addTx('Einkauf – ' + L.name, -total); writeSave();
   uiTone(SND.nfc); haptic(handBy('left'), .7, 140); playAt(SND.scan, L.pad, .6, 3);
+  L.onPaid?.();                                                           // Lieferdienst: Essen übergeben
 }
 function updPay(dt) {
   let P = phone.pay; const handOut = phone.where === 'hand' && phoneG.visible;
   let best = null;
-  for (const I of interiors) for (const L of I.lanes || []) if (L.total > 0 && L.nearD < 3 && (!best || L.nearD < best.nearD)) best = L;
+  for (const L of deli.o?.state === 'wait' ? [...shopLanes, deli.o.lane] : shopLanes) if (L.total > 0 && L.nearD < 3 && (!best || L.nearD < best.nearD)) best = L;   // Kassen + Scanner des Lieferdienstes
   if (!P) {
     if (best && handOut && time > payCool) { phone.pay = { L: best, state: 'wait', t0: time, total: best.total, near: 0, leave: 0, bal0: money, bal1: money, t1: 0 }; phone.drawT = 0; uiTone(SND.ding); }
     else if (best && !handOut && time > payHint) { payHint = time + 9; msg('Zum Bezahlen: Handy rausholen (' + (xrOn() ? 'A' : 'P') + ') und ans NFC-Feld halten', 4); }
@@ -5411,7 +5433,7 @@ function cartNearLane(L) { return carts.filter(c => Math.hypot(c.g.position.x - 
 // Hauptschleife der Ware, Kasse und Bezahlung
 let shopVisT = 0;
 function updShop(dt) {
-  updHandVel(dt);
+  updHandVel(dt); updTkPend();
   const mouth = mouthPos();
   shopVisT -= dt;
   if (shopVisT <= 0) {
@@ -5438,6 +5460,250 @@ function updShop(dt) {
   for (const h of hands) { if (h.held?.type === 'item') target = h.held.it; else if (!target && xrOn()) { const n = nearestItem(h.ctrl.getWorldPosition(V()), .3); if (n) target = n; } }
   if (heldDesk) target = heldDesk;
   if (target && shopItems.includes(target)) showTag(target); else tagSpr.visible = false;
+}
+
+// ---------- Sachen aus dem Kofferraum eines anderen Spielers nehmen (Kofferraum muss offen sein; der Besitzer gibt sie heraus) ----------
+const tkPend = [];                                                          // angefragt, Antwort vom Besitzer steht noch aus
+function nearRemoteTrunkItem(pos, r) {
+  let best = null, bd = r;
+  for (const pl of net.players.values()) {
+    if (!pl.tiMeshes?.length || (pl.st?.tk || 0) < .3 || !pl.carMesh?.visible) continue;
+    for (const m of pl.tiMeshes) { if (!m.visible) continue; const d = m.getWorldPosition(v1).distanceTo(pos); if (d < bd) { bd = d; best = { p: pl, i: m.userData.ti, type: m.userData.type, m }; } }
+  }
+  return best;
+}
+function takeRemoteItem(R, h) {                                             // h = Hand (VR) oder 'desk' (PC)
+  R.m.visible = false; tkPend.push({ id: R.p.id, type: R.type, h, t: time, m: R.m });
+  netSig(R.p.id, { tkTake: [R.i, R.type] }); if (h !== 'desk') haptic(h, .25, 40);
+}
+function onTkGive(p, d) {
+  const k = tkPend.findIndex(q => q.id === p.id && q.type === d.t), q = k >= 0 ? tkPend.splice(k, 1)[0] : null;
+  if (!SHOP_ITEMS[d.t]) return;
+  const it = makeItem(d.t, V(), !!d.p); it.stolen = !!d.s; it.amt = d.a ?? 1; it.eatT = d.e || 0;
+  const h = q?.h;
+  if (h === 'desk') { if (!heldDesk) deskHold(it); else { it.mesh.position.copy(headWorld); it.rest = false; } }
+  else if (h && h.now[1] && !h.held) holdItem(it, h);                      // Grip noch gedrückt: landet direkt in der Hand
+  else { it.mesh.position.copy(q?.m ? q.m.getWorldPosition(v1) : headWorld); it.rest = false; }
+}
+// Besitzer: jemand nimmt etwas aus meinem offenen Kofferraum
+function onTkTake(p, [i, type]) {
+  const T = pcar.trunk; if (!T || T.a < .3 || vehicle.type === 'scooter') return;
+  const l = shopItems.filter(q => q.trunk).slice(0, 16), it = l[i]?.type === type ? l[i] : l.find(q => q.type === type);
+  if (!it) return;
+  netSig(p.id, { tkGive: { t: it.type, p: it.paid ? 1 : 0, s: it.stolen ? 1 : 0, a: r2(it.amt), e: r2(it.eatT) } });
+  removeItem(it); trunkSave(); playAt(SND.thump, pcar.group.position, .3, 3);
+}
+function updTkPend() { for (let j = tkPend.length - 1; j >= 0; j--) if (time - tkPend[j].t > 2.5) { tkPend[j].m.visible = true; tkPend.splice(j, 1); } }   // keine Antwort: wieder zeigen
+
+// ===================================================================
+// Lieferdienst (App "Essen"): Produkte wählen -> Kauf bestätigen -> Fahrer kommt mit dem E-Scooter (Live-Tracker in der App)
+// -> klingelt an deiner Haustür (ohne Haus: dort, wo du bestellt hast) -> hält dir den Scanner hin: Handy ans NFC-Feld -> Essen
+// ===================================================================
+const DELI_FEE = 2.5, DELI_V = 10, DELI_MAX = 900, DELI_COOK = 7;           // Liefergebühr, Tempo des Fahrers (m/s), längste Anfahrt (m), Zubereitung (s)
+SND.bell = mkBuf(1.7, t => (Math.sin(2 * Math.PI * 659 * t) * Math.exp(-t * 3.2) * (t < .75 ? 1 : 0) + (t > .55 ? Math.sin(2 * Math.PI * 523 * (t - .55)) * Math.exp(-(t - .55) * 2.6) : 0)) * .45);   // Ding-Dong
+const deli = { cart: {}, ask: -99, o: null };
+const deliCount = () => Object.values(deli.cart).reduce((s, n) => s + n, 0);
+const deliSum = () => Math.round((Object.entries(deli.cart).reduce((s, [k, n]) => s + SHOP_ITEMS[k].price * n, 0) + DELI_FEE) * 100) / 100;
+function deliNote(text) { phone.notif = { title: 'Lieferdienst', text, t0: time, until: time + 4.5 }; phone.drawT = 0; }
+function deliOrder() {
+  if (deli.o || !deliCount()) return;
+  const types = Object.entries(deli.cart).flatMap(([k, n]) => Array(n).fill(k));
+  const home = save.house >= 0 ? homes[save.house] : null;
+  const dest = home ? houseDoor(home) : V(headWorld.x, 0, headWorld.z); dest.y = surfaceAt(dest.x, dest.z);
+  const dd = p => Math.hypot(p.x - dest.x, p.z - dest.z);
+  const shop = pizzerias.filter(p => dd(p) > 120).sort((a, b) => dd(a) - dd(b))[0] || { x: dest.x + 300, z: dest.z + 200 };
+  let route = findRoute(shop.x, shop.z, dest.x, dest.z), len = 0;             // über die Straßen; sehr weite Anfahrt kürzen (Fahrer ist schon unterwegs)
+  for (let i = route.length - 1; i > 0; i--) { len += Math.hypot(route[i].x - route[i - 1].x, route[i].z - route[i - 1].z); if (len > DELI_MAX) { route = route.slice(i - 1); break; } }
+  deli.o = { types, total: deliSum(), dest, home: !!home, route, k: 1, pos: V(route[0].x, 0, route[0].z), yaw: 0, off: 0, state: 'cook', t: 0, ringT: 0 };
+  deli.cart = {}; deli.ask = -99;
+  deliNote('Bestellung angenommen – wird zubereitet'); uiTone(SND.ding);
+}
+// Fahrer (orange Kleidung + Thermo-Rucksack), E-Scooter und Scanner mit Anzeige + NFC-Feld
+function deliSpawn(o) {
+  const root = new THREE.Group(); scene.add(root);
+  const F = courierTpl;
+  if (F) {
+    const m = AS.cloneSkinned(F.g.scene); m.scale.setScalar(F.s); m.rotation.y = F.ry; root.add(m);
+    const tint = new THREE.Color(1, .82, .66);                             // leicht orange (Liefer-Kleidung)
+    m.traverse(q => { if (q.isMesh) { q.material = q.material.clone(); q.material.color.multiply(tint); q.frustumCulled = false; } });
+    const stand = F.walk.clone(); stand.name += '_stand';                  // Stehen = erstes Bild der Laufbewegung (die Idle-Pose des Soldaten wirkt geduckt)
+    o.mixer = new THREE.AnimationMixer(m); o.walk = o.mixer.clipAction(F.walk); o.idle = o.mixer.clipAction(stand); o.idle.timeScale = 0;
+    o.walk.play(); o.idle.play(); o.walk.setEffectiveWeight(0); o.mixer.update(0);   // Pose sofort setzen (sonst T-Pose, solange sie weit weg ist)
+  } else { box(.42, .6, .24, M(0xff6d00), 0, 1.2, 0, root); box(.3, .85, .2, M(0x2b3a55), 0, .43, 0, root); }
+  box(.42, .44, .3, M(0xff6d00, { roughness: .55 }), 0, 1.3, -.3, root); box(.3, .06, .01, M(0xffffff), 0, 1.38, -.455, root);
+  const bl = new THREE.Mesh(BLOB_GEO, blobMat); bl.rotation.x = -Math.PI / 2; bl.position.y = .03; root.add(bl);
+  o.c = root; o.sc = buildScooter(); shade(o.sc); scene.add(o.sc);
+  const dev = new THREE.Group(); dev.visible = false; scene.add(dev);
+  const body = new THREE.Mesh(BOX, M(0x23272e, { roughness: .5 })); body.scale.set(.11, .2, .03); dev.add(body);
+  const [dc, dg] = C(256, 192), dtex = T(dc, false);
+  const disp = new THREE.Mesh(new THREE.PlaneGeometry(.096, .072), new THREE.MeshBasicMaterial({ map: dtex, toneMapped: false })); disp.position.set(0, .045, .0155); dev.add(disp);
+  const pad = new THREE.Mesh(new THREE.CircleGeometry(.03, 24), new THREE.MeshBasicMaterial({ map: ITEX.nfc, toneMapped: false })); pad.position.set(0, -.052, .0155); dev.add(pad);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(.034, .041, 28), new THREE.MeshBasicMaterial({ color: 0x4dd0e1, transparent: true, opacity: 0, toneMapped: false, depthWrite: false })); ring.position.set(0, -.052, .016); dev.add(ring);
+  o.dev = dev; o.padM = pad;
+  o.lane = { name: 'Lieferdienst', g: dg, tex: dtex, ring, items: [...o.types.map(t => ({ def: SHOP_ITEMS[t] })), { def: { name: 'Lieferung', price: DELI_FEE } }], total: o.total, dirty: true, paidT: -99, pad: V(), nearD: 99, onPaid: () => deliPaid(o) };
+}
+// entlang einer Route fahren; true = am Ende angekommen
+function deliMove(o, route, v, dt) {
+  let step = v * dt;
+  while (step > 0 && o.k < route.length) {
+    const q = route[o.k], dx = q.x - o.pos.x, dz = q.z - o.pos.z, d = Math.hypot(dx, dz);
+    if (d > .01) o.tyaw = Math.atan2(dx, dz);
+    if (d <= step) { o.pos.x = q.x; o.pos.z = q.z; o.k++; step -= d; } else { o.pos.x += dx / d * step; o.pos.z += dz / d * step; step = 0; }
+  }
+  o.yaw += wrapA((o.tyaw ?? o.yaw) - o.yaw) * Math.min(1, dt * 6);
+  return o.k >= route.length;
+}
+function deliRidePose(o, dt) {                                              // rechts fahren (Bordstein-Abstand), Fahrer steht auf dem Scooter
+  o.off = Math.min(2.3, o.off + dt * 1.2);
+  const x = o.pos.x - Math.cos(o.yaw) * o.off, z = o.pos.z + Math.sin(o.yaw) * o.off, y = surfaceAt(x, z);
+  o.sc.position.set(x, y, z); o.sc.rotation.y = o.yaw; o.c.position.set(x, y + .16, z); o.c.rotation.y = o.yaw;
+}
+const deliLeft = o => {
+  if (o.state === 'cook') return Infinity;
+  if (o.state !== 'ride') return 0;
+  let d = 0, x = o.pos.x, z = o.pos.z;
+  for (let i = o.k; i < o.route.length; i++) { d += Math.hypot(o.route[i].x - x, o.route[i].z - z); x = o.route[i].x; z = o.route[i].z; }
+  return d + Math.hypot(o.dest.x - x, o.dest.z - z);
+};
+function deliPaid(o) {                                                      // bezahlt: Fahrer reicht das Essen (liegt vor ihm in der Hand zum Nehmen)
+  o.state = 'paid'; o.t = 0; o.got = [];
+  const n = o.types.length; o.c.updateMatrixWorld(true);
+  o.types.forEach((t, i) => {
+    const row = Math.floor(i / 4), cnt = Math.min(4, n - row * 4), p = o.c.localToWorld(V((i % 4 - (cnt - 1) / 2) * .13, 1.02 + row * .14, .5));
+    const it = makeItem(t, p, true); it.rest = true; it.mesh.rotation.y = rand(0, 6.28); o.got.push({ it, p: p.clone() });
+  });
+  deliNote('Bezahlt – guten Appetit!');
+}
+function deliLeave(o) {
+  for (const g of o.got || []) if (shopItems.includes(g.it) && !g.it.held && g.it.rest && g.it.mesh.position.distanceTo(g.p) < .05) g.it.rest = false;   // nicht genommen: fällt runter
+  o.state = 'back'; o.t = 0; if (o.dev) o.dev.visible = false;
+}
+function deliEnd(text) {
+  const o = deli.o; if (!o) return;
+  for (const x of [o.c, o.sc, o.dev]) if (x) scene.remove(x);
+  if (phone.pay?.L === o.lane) phone.pay = null;
+  deli.o = null; phone.drawT = 0; if (text) deliNote(text);
+}
+function updDeli(dt) {
+  const o = deli.o; if (!o) return;
+  o.t += dt;
+  if (o.state === 'cook') {
+    if (o.t < DELI_COOK) return;
+    deliSpawn(o); o.state = 'ride'; o.t = 0; o.k = 1; o.off = 2.3;
+    const q = o.route[1] || o.dest; o.yaw = o.tyaw = Math.atan2(q.x - o.pos.x, q.z - o.pos.z);
+    deliNote('Dein Essen ist unterwegs!'); return;
+  }
+  const p = o.c.position, pd = Math.hypot(headWorld.x - p.x, headWorld.z - p.z);
+  if (o.state === 'ride') {
+    if (deliMove(o, o.route, DELI_V, dt)) { o.state = 'walk'; o.t = 0; o.park = o.sc.position.clone(); p.y = o.park.y; }
+    else deliRidePose(o, dt);
+  } else if (o.state === 'walk' || o.state === 'back') {                   // zu Fuß zur Tür bzw. zurück zum Scooter
+    const tg = o.state === 'walk' ? o.dest : o.park, dx = tg.x - p.x, dz = tg.z - p.z, d = Math.hypot(dx, dz);
+    if (d > .05) { const s = Math.min(d, 1.5 * dt); p.x += dx / d * s; p.z += dz / d * s; o.yaw += wrapA(Math.atan2(dx, dz) - o.yaw) * Math.min(1, dt * 8); }
+    p.y = surfaceAt(p.x, p.z); o.c.rotation.y = o.yaw;
+    if (d < .06 || (o.state === 'walk' && pd < 1.15)) {                   // an der Tür (oder kurz vor dir) stehen bleiben
+      if (o.state === 'walk') { o.state = 'wait'; o.t = 0; o.ringT = 0; o.rang = false; }
+      else { o.state = 'away'; o.t = 0; o.back = o.route.slice().reverse(); o.k = 1; o.pos.set(o.park.x, 0, o.park.z); o.off = 0; }
+    }
+  } else if (o.state === 'wait' || o.state === 'paid') {                  // an der Tür: klingeln, Scanner hinhalten, dich anschauen
+    if (pd < 14) o.yaw += wrapA(Math.atan2(headWorld.x - p.x, headWorld.z - p.z) - o.yaw) * Math.min(1, dt * 4);
+    o.c.rotation.y = o.yaw;
+    if (o.state === 'wait') {
+      o.ringT -= dt;
+      if (o.ringT <= 0 && (pd > 3 || !o.rang)) { o.ringT = 25; o.rang = true; playAt(SND.bell, o.dest, 2.4, 14); deliNote('Es klingelt – dein Essen ist da!'); uiTone(SND.ding); hands.forEach(h => haptic(h, .6, 200)); }
+      if (o.t > 240) { deliLeave(o); deliNote('Niemand hat aufgemacht – Bestellung storniert'); }
+    } else if (o.t > 40 || o.got.every(g => !shopItems.includes(g.it) || g.it.held || g.it.mesh.position.distanceTo(g.p) > .3)) deliLeave(o);   // alles genommen
+  } else if (o.state === 'away') {                                         // wegfahren, dann verschwinden
+    const done = deliMove(o, o.back, DELI_V, dt); deliRidePose(o, dt);
+    if (done || o.t > 18) { deliEnd(); return; }
+  }
+  // Scanner in der Hand: zeigt Artikel, Summe, deinen Kontostand; NFC-Feld zum Bezahlen
+  const show = o.state === 'wait' || (o.state === 'paid' && o.t < 2.5);
+  o.dev.visible = show;
+  if (show) {
+    o.c.updateMatrixWorld(true); o.dev.position.copy(o.c.localToWorld(v1.set(.2, 1.15, .42))); o.dev.lookAt(headWorld.x, headWorld.y - .2, headWorld.z);
+    const L = o.lane; o.padM.getWorldPosition(L.pad); L.nearD = L.pad.distanceTo(headWorld);
+    if (L.nearD < 8) { L.redraw = (L.redraw || 0) - dt; if (L.dirty || L.redraw <= 0 || Math.round(money * 100) !== L.moneyShown) { drawLane(L); L.dirty = false; L.redraw = .5; } }
+    L.ring.material.opacity = L.total > 0 && phone.where === 'hand' && L.nearD < 1.7 ? .35 + .35 * Math.sin(time * 6) : 0;
+  }
+  if (o.mixer && pd < 90) { const w = o.state === 'walk' || o.state === 'back' ? 1 : 0; o.walk.setEffectiveWeight(w); o.idle.setEffectiveWeight(1 - w); o.mixer.update(dt); }
+}
+// App "Essen": Speisekarte + Warenkorb, nach dem Bestellen der Live-Tracker
+function drawDeliMap(g, o, y0, h) {
+  const cp = o.c ? o.c.position : o.pos, d = Math.hypot(o.dest.x - cp.x, o.dest.z - cp.z);
+  const S = clamp((Math.min(PW - 24, h) - 90) / Math.max(30, d), .12, 1.2), mx = (o.dest.x + cp.x) / 2, mz = (o.dest.z + cp.z) / 2, cx = PW / 2, cy = y0 + h / 2;
+  const X = x => cx + (x - mx) * S, Y = z => cy + (z - mz) * S;
+  g.save(); g.beginPath(); g.roundRect(12, y0, PW - 24, h, 16); g.clip(); g.fillStyle = '#d9d4c7'; g.fillRect(0, y0, PW, h);
+  mapBase(g, X, Y, S);
+  if (o.state === 'ride' || o.state === 'cook') {                           // restliche Strecke
+    g.strokeStyle = '#ef6c00'; g.lineWidth = 5; g.lineJoin = 'round'; g.lineCap = 'round'; g.beginPath(); g.moveTo(X(o.pos.x), Y(o.pos.z));
+    for (let i = o.k; i < o.route.length; i++) g.lineTo(X(o.route[i].x), Y(o.route[i].z));
+    g.lineTo(X(o.dest.x), Y(o.dest.z)); g.stroke();
+  }
+  // Ziel: Haus-Symbol
+  const hx = X(o.dest.x), hy = Y(o.dest.z);
+  g.beginPath(); g.arc(hx, hy, 15, 0, 7); g.fillStyle = '#2b6cff'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke();
+  g.fillStyle = '#fff'; g.beginPath(); g.moveTo(hx - 8, hy); g.lineTo(hx, hy - 8); g.lineTo(hx + 8, hy); g.closePath(); g.fill(); g.fillRect(hx - 5.5, hy, 11, 7);
+  // du
+  g.beginPath(); g.arc(X(headWorld.x), Y(headWorld.z), 6, 0, 7); g.fillStyle = '#e20074'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 2; g.stroke();
+  // Fahrer (pulsiert)
+  const fx = X(cp.x), fy = Y(cp.z);
+  g.beginPath(); g.arc(fx, fy, 15 + Math.sin(time * 5) * 4, 0, 7); g.fillStyle = 'rgba(239,108,0,.25)'; g.fill();
+  g.beginPath(); g.arc(fx, fy, 11, 0, 7); g.fillStyle = '#ef6c00'; g.fill(); g.strokeStyle = '#fff'; g.lineWidth = 3; g.stroke();
+  g.fillStyle = '#fff'; g.fillRect(fx - 5, fy + 1, 10, 2.5); g.fillRect(fx + 2, fy - 6, 2.5, 8);       // kleiner Scooter
+  g.restore();
+}
+function drawFood(g) {
+  const o = deli.o;
+  rr(g, 0, 56, PW, 80, 0, '#e65100'); tx(g, 'Lieferdienst', 24, 88, 28, '#fff', 'left', 800);
+  tx(g, o ? (o.home ? 'Lieferung zu deinem Haus' : 'Lieferung zu deinem Standort') : 'Essen & Getränke – bezahlt wird an der Tür', 24, 118, 13, '#ffe0b2', 'left', 500);
+  if (!o) {
+    Object.entries(SHOP_ITEMS).forEach(([k, d], i) => {
+      const y = 146 + i * 50, n = deli.cart[k] || 0;
+      rr(g, 12, y, PW - 24, 44, 12, n ? '#3e2723' : '#1e2129'); needIcon(g, d.kind === 'food' ? 'food' : 'drink', 34, y + 22);
+      tx(g, d.name, 58, y + 15, 15, '#fff', 'left', 700); tx(g, fmtEur(d.price), 58, y + 33, 12, '#ffcc80', 'left', 600);
+      rr(g, PW - 128, y + 7, 30, 30, 15, '#37474f'); tx(g, '−', PW - 113, y + 22, 20, '#fff', 'center', 800); btn(PW - 136, y, 44, 44, 'fd-:' + k);
+      tx(g, String(n), PW - 78, y + 22, 17, '#fff', 'center', 800);
+      rr(g, PW - 58, y + 7, 30, 30, 15, '#ef6c00'); tx(g, '+', PW - 43, y + 22, 20, '#fff', 'center', 800); btn(PW - 64, y, 52, 44, 'fd+:' + k);
+    });
+    const n = deliCount();
+    tx(g, 'Liefergebühr', 24, 562, 14, '#9e9e9e', 'left', 500); tx(g, fmtEur(DELI_FEE), PW - 24, 562, 14, '#9e9e9e', 'right', 600);
+    tx(g, 'Summe', 24, 588, 18, '#fff', 'left', 800); tx(g, n ? fmtEur(deliSum()) : '–', PW - 24, 588, 20, '#fff', 'right', 800);
+    rr(g, 14, 612, PW - 28, 56, 16, n ? '#ef6c00' : '#424242'); tx(g, n ? 'Bestellen (' + n + ' Artikel)' : 'Produkte wählen', PW / 2, 640, 18, '#fff', 'center', 800); if (n) btn(14, 612, PW - 28, 56, 'fdorder');
+    if (time - deli.ask < 15) {                                            // Kauf bestätigen (Knopf an anderer Stelle, damit Doppeltippen nichts auslöst)
+      g.fillStyle = 'rgba(0,0,0,.72)'; g.fillRect(0, 0, PW, PH); btn(0, 0, PW, PH, 'fdcancel');
+      rr(g, 20, 190, PW - 40, 310, 20, '#1e2129'); g.strokeStyle = '#ef6c00'; g.lineWidth = 3; g.beginPath(); g.roundRect(20, 190, PW - 40, 310, 20); g.stroke();
+      tx(g, 'Kauf bestätigen?', PW / 2, 228, 22, '#fff', 'center', 800);
+      const lines = Object.entries(deli.cart).map(([k, c]) => c + '× ' + SHOP_ITEMS[k].name);
+      lines.slice(0, 5).forEach((l, i) => tx(g, l, PW / 2, 264 + i * 22, 15, '#cfd8dc', 'center', 600));
+      if (lines.length > 5) tx(g, '+ ' + (lines.length - 5) + ' weitere', PW / 2, 374, 13, '#90a4ae');
+      const ys = 264 + Math.min(6, lines.length) * 22 + 12;
+      tx(g, 'Summe ' + fmtEur(deliSum()) + ' (inkl. Lieferung)', PW / 2, ys, 16, '#ffcc80', 'center', 800);
+      tx(g, 'Bezahlt wird an der Tür – Handy an den Scanner', PW / 2, ys + 24, 12, '#90a4ae', 'center', 500);
+      const ok = time - deli.ask > .8;
+      rr(g, 36, 438, 136, 48, 14, ok ? '#ef6c00' : '#5a3a1a'); tx(g, 'Bestätigen', 104, 462, 16, '#fff', 'center', 800); btn(36, 438, 136, 48, 'fdok');
+      rr(g, PW - 172, 438, 136, 48, 14, '#455a64'); tx(g, 'Abbrechen', PW - 104, 462, 16, '#fff', 'center', 800); btn(PW - 172, 438, 136, 48, 'fdcancel');
+    }
+    return;
+  }
+  // Live-Tracker
+  const left = deliLeft(o), done = ['paid', 'back', 'away'].includes(o.state);
+  const st = { cook: 'Wird zubereitet …', ride: 'Fahrer ist unterwegs', walk: 'Fahrer ist gleich da', wait: 'Fahrer steht vor der Tür' }[o.state] || 'Geliefert – guten Appetit!';
+  const sub = o.state === 'cook' ? 'Abfahrt in ' + Math.max(1, Math.ceil(DELI_COOK - o.t)) + ' s' : o.state === 'ride' ? (left > 1000 ? (left / 1000).toFixed(1) + ' km' : Math.round(left) + ' m') + ' · ' + (left / DELI_V < 60 ? 'unter 1 min' : 'ca. ' + Math.round(left / DELI_V / 60) + ' min')
+    : o.state === 'walk' ? 'Gleich klingelt es' : o.state === 'wait' ? 'Handy an den Scanner halten · ' + fmtEur(o.total) : 'Danke für deine Bestellung';
+  tx(g, st, 24, 160, 20, '#fff', 'left', 800); tx(g, sub, 24, 186, 14, '#ffcc80', 'left', 600);
+  const stage = o.state === 'cook' ? 0 : o.state === 'ride' ? 1 : done ? 3 : 2;
+  ['Küche', 'Unterwegs', 'An der Tür', 'Geliefert'].forEach((l, i) => {
+    const x = 40 + i * 93;
+    if (i < 3) { rr(g, x, 212, 93, 4, 2, i < stage ? '#ef6c00' : '#424242'); }
+    g.beginPath(); g.arc(x, 214, i === stage ? 9 + Math.sin(time * 5) * 1.5 : 7, 0, 7); g.fillStyle = i <= stage ? '#ef6c00' : '#424242'; g.fill();
+    tx(g, l, x, 236, 11, i <= stage ? '#ffcc80' : '#757575', 'center', 600);
+  });
+  drawDeliMap(g, o, 252, 300);
+  const cnt = {}; o.types.forEach(t => cnt[t] = (cnt[t] || 0) + 1);
+  tx(g, Object.entries(cnt).map(([k, c]) => c + '× ' + SHOP_ITEMS[k].name).join(', ').slice(0, 44), 24, 572, 13, '#cfd8dc', 'left', 500);
+  tx(g, 'Summe ' + fmtEur(o.total) + (done ? ' · bezahlt' : ' · an der Tür zahlen'), 24, 594, 14, '#fff', 'left', 700);
+  if (o.state === 'cook' || o.state === 'ride') { rr(g, 14, 620, PW - 28, 48, 14, '#455a64'); tx(g, 'Bestellung stornieren', PW / 2, 644, 16, '#fff', 'center', 700); btn(14, 620, PW - 28, 48, 'fdstorno'); }
 }
 
 // ===================================================================
@@ -5629,7 +5895,7 @@ const job = { id: null, stage: '', target: null, t0: 0, deadline: 0, dist: 0, np
 const beamMat = col => new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: .32, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
 const jobBeam = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.5, 160, 16, 1, true), beamMat(0x33ff88)); jobBeam.visible = false; scene.add(jobBeam);
 const robberBeam = new THREE.Mesh(new THREE.CylinderGeometry(.7, .7, 140, 14, 1, true), beamMat(0x2a5bff)); robberBeam.visible = false; scene.add(robberBeam);
-let figTpl = null;                                                       // Vorlage für Fahrgäste (aus den Fußgänger-Modellen)
+let figTpl = null, courierTpl = null;                                    // Vorlage für Fahrgäste (aus den Fußgänger-Modellen) bzw. den Lieferfahrer
 function startNavXY(n, p) { phone.dest = { n, p }; Object.assign(nav, { on: true, n, p, offT: 0, t: 0 }); planRoute(true); phone.drawT = 0; cp.drawT = 0; }
 function setJobTarget(p, col, label) {
   job.target = p;
@@ -6368,7 +6634,9 @@ function onNet(m) {
     if (m.reward) { money += m.reward; save.st.arrest++; msg('Festnahme erfolgreich! +' + m.reward + ' €', 4); uiTone(SND.arrive); }
     if (m.pay || m.gift || m.zero) onMoney(p, m);
     if (m.vmax !== undefined) setVmax(Number(m.vmax) || 0);              // Admin legt dein Auto-Tempo fest (Server lässt das nur vom Admin durch)
-    if (m.tk !== undefined) onTrunkReq(m.tk);                            // anderer Spieler öffnet/schließt meinen Kofferraum                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
+    if (m.tk !== undefined) onTrunkReq(m.tk);                            // anderer Spieler öffnet/schließt meinen Kofferraum
+    if (m.tkTake) onTkTake(p, m.tkTake);                                 // ... nimmt etwas aus meinem offenen Kofferraum
+    if (m.tkGive) onTkGive(p, m.tkGive);                                 // ich habe etwas aus seinem Kofferraum bekommen                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
     if (m.killed) { msg('Du hast ' + p.name + ' erledigt!', 3); money += 100; }
   }
 }
@@ -6830,10 +7098,10 @@ function syncTrunkItems(p, s) {
   for (const m of p.tiMeshes || []) m.parent?.remove(m);
   p.tiMeshes = []; p.tiKey = key; p.tiCh = p.cmCh;
   if (!p.cmCh || !s.ti) return;
-  for (const [type, x, y, z, ry, sc] of s.ti) {
-    if (!ITEM_BUILD[type]) continue;
-    const m = new THREE.Mesh(itemGeo(type), itemMat); m.position.set(x, y, z); m.rotation.y = ry || 0; m.scale.setScalar(sc || 1); p.cmCh.add(m); p.tiMeshes.push(m);
-  }
+  s.ti.forEach(([type, x, y, z, ry, sc], i) => {
+    if (!ITEM_BUILD[type]) return;
+    const m = new THREE.Mesh(itemGeo(type), itemMat); m.position.set(x, y, z); m.rotation.y = ry || 0; m.scale.setScalar(sc || 1); m.userData.ti = i; m.userData.type = type; p.cmCh.add(m); p.tiMeshes.push(m);
+  });
 }
 
 // Avatar aus einem Zustand (Kopf, Hände, Handy) bewegen – für andere Spieler und für dich selbst (Selfie)
@@ -7420,6 +7688,7 @@ function upgradePeds(gA, gB) {
   };
   const models = [info(gA)]; if (gB) models.push(info(gB));
   figTpl = models[0];                                                     // Vorlage für Taxi-Fahrgäste
+  courierTpl = models[1] ? { ...models[1], walk: rotOnly(walk) } : { ...models[0], walk };   // Lieferfahrer: ziviles Modell (falls geladen) mit übertragener Laufbewegung
   peds.forEach((p, idx) => {
     const I = models[idx % models.length], own = I.g === gA;
     const m = AS.cloneSkinned(I.g.scene); m.scale.setScalar(I.s); m.rotation.y = I.ry;
@@ -7723,7 +7992,7 @@ function frame() {
     hurt = Math.max(0, hurt - dt * 1.5); deathFx.material.opacity = hurt * .45 + (player.hp < 35 ? .12 + Math.sin(time * 6) * .06 : 0);
   }
   updWeather(dt); updMission(dt); updVillain(dt); updIntro(dt); updDisasters(dt);
-  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio(); updEmergency(dt); updNeeds(dt); updShop(dt); updMaint(dt);
+  updJob(dt); updCops(dt); updRob(dt); updRadio(); updFuel(dt); updDog(dt); updPhoneAudio(); updEmergency(dt); updNeeds(dt); updDeli(dt); updShop(dt); updMaint(dt);
   saveT -= dt; if (saveT <= 0) { saveT = 5; writeSave(); }
   boomLight.intensity *= Math.pow(.02, dt); muzzleLight.intensity = Math.max(0, muzzleLight.intensity - dt * 120);
   tracerT -= dt; tracer.visible = tracerT > 0;
@@ -7735,4 +8004,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, colliders, adminSpeed, setVmax, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, colliders, adminSpeed, setVmax, deli, deliOrder, deliEnd, nearRemoteTrunkItem, takeRemoteItem, get money() { return money; }, set money(v) { money = v; } };
