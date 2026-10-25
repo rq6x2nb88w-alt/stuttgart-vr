@@ -29,7 +29,9 @@ node server.js
 - **Neue Autos**: Porsche 911, Jeep Grand Wagoneer, **Tesla Roadster** (200.000 € – am Auto-Display „Raumflug“: R-Trigger Schub, L-Trigger Bremse, linker Stick hoch/runter; PC: R/V) sowie **Polizei**, **Feuerwehr** (Wasserwerfer löscht Brände) und **Krankenwagen** mit Blaulicht + Sirene
 - **Hunger + Durst**: zwei Balken auf dem Handy. Im Supermarkt / an der Tankstelle Essen und Getränke vom Tisch greifen, aufs Kassenband legen, Handy rausholen und ans **NFC-Feld** halten (Liquid-Glass-Fenster mit Kontostand → Haken). Essen an den Mund = essen, Flasche kippen = trinken (PC: Q = aufheben, Maustaste halten = essen/trinken)
 - **Türen + Kofferraum**: alle Autos haben greifbare Türgriffe (Jeep: 4 echte Türen, Porsche: 2, Roadster: beide Türen). Kofferraum am Griff hochziehen oder am Auto-Display „Kofferraum“ (PC: K) – Jetta/Polizei: Deckel, Jeep: Scheibe fährt runter, Klappe klappt runter
-- **Kofferraum als Stauraum**: Kofferraum öffnen, Essen/Getränke hineinlegen – sie fahren mit und bleiben gespeichert (auch nach dem Neuladen, je Auto)
+- **Kofferraum als Stauraum**: Kofferraum öffnen, Essen/Getränke hineinlegen – sie fahren mit und bleiben gespeichert (auch nach dem Neuladen, je Auto) – andere Spieler sehen, was drin liegt
+- **Fremder Kofferraum**: ist ein Auto entsperrt (Display: „Türen offen“), können auch andere den Kofferraum am Griff (PC: K) öffnen und schließen
+- **Im Jeep-Kofferraum mitfahren**: zwei zusätzliche Plätze auf dem Ladeboden, Blick nach hinten raus – hinten am Jeep A drücken (PC: F), Aussteigen mit B (PC: F) hinter dem Auto
 - **Displays**: jedes Auto hat ein Hauptdisplay und ein Mini-Display hinter dem Lenkrad (fehlen sie im Modell, werden sie sichtbar vor das Armaturenbrett gesetzt)
 - **Einkaufswagen** im Supermarkt am Eingang: Griff greifen und schieben (PC: Q), Ware hineinlegen, Wagen neben die Kasse stellen – alles darin wird gescannt
 - **Admin**: Konto eines Spielers (oder das eigene) auf 0 € setzen

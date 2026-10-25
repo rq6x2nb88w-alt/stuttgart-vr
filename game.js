@@ -3374,6 +3374,24 @@ function setTrunkPose(pivot, glassG, a, drop, glassH) {
   if (drop) { if (glassG) glassG.position.y = -Math.min(1, a / .4) * glassH; pivot.rotation.x = -Math.max(0, a - .4) * 1.36; }
   else pivot.rotation.x = a;
 }
+// Kofferraum am Auto eines anderen Spielers: geht nur auf, wenn das Auto entsperrt ist ("Türen offen" am Display)
+function nearRemoteTrunk(r) {
+  let best = null;
+  for (const pl of net.players.values()) {
+    if (!pl.carMesh?.visible || !pl.cmTrunkH || pl.carType === 'scooter') continue;
+    const d = pl.cmTrunkH.getWorldPosition(v1).distanceTo(headWorld); if (d < (best ? best.d : r)) best = { p: pl, d };
+  }
+  return best;
+}
+function remoteTrunk(pl) {
+  if (pl.st?.lk !== 0) { playAt(SND.click, pl.cmTrunkH.getWorldPosition(V()), 1, 3); hands.forEach(h => haptic(h, .5, 60)); return; }   // abgeschlossen: rüttelt nur
+  netSig(pl.id, { tk: (pl.st?.tk || 0) > .15 ? 0 : 1 });
+}
+// jemand anderes öffnet/schließt meinen Kofferraum (nur wenn mein Auto entsperrt ist und steht)
+function onTrunkReq(open) {
+  const T = pcar.trunk; if (!T || pcar.locked || vehicle.type === 'scooter' || Math.abs(pcar.speed || 0) > 3) return;
+  T.grab = null; T.anim = open ? T.max : 0;
+}
 function toggleTrunk() {
   const T = pcar.trunk; if (!T || vehicle.type === 'scooter') { msg('Dieses Auto hat keinen Kofferraum zum Öffnen', 2); return; }
   T.anim = T.a > .15 ? 0 : T.max; msg(T.anim ? 'Kofferraum geht auf' : 'Kofferraum geht zu', 1.5);
@@ -3899,8 +3917,10 @@ function tryGrab(h) {
   for (const pl of net.players.values()) {
     if (!pl.carMesh?.visible || !pl.cmHandles || pl.carType === 'scooter') continue;
     pl.cmHandles.forEach((hd, i) => { if (!hd) return; const dist = hd.getWorldPosition(v1).distanceTo(p); if (dist < dd) { dd = dist; rem = { p: pl, seat: i }; door = null; trk = null; } });
+    if (pl.cmTrunkH) { const dist = pl.cmTrunkH.getWorldPosition(v1).distanceTo(p); if (dist < dd + .06) { dd = dist; rem = { p: pl, trunk: true }; door = null; trk = null; } }   // Kofferraum-Griff
   }
   if (trk) { h.held = { type: 'trunk', T: trk }; trk.grab = h; trk.anim = undefined; haptic(h, .4, 50); return; }
+  if (rem?.trunk) { haptic(h, .4, 50); remoteTrunk(rem.p); return; }
   if (rem) {
     const s = rem.p.st;
     if (rem.seat === 0 && s?.c) { msg(rem.p.name + ' sitzt am Steuer', 2); haptic(h, .3, 40); return; }
@@ -4027,7 +4047,10 @@ addEventListener('keydown', e => {
   if (e.code === 'KeyB' && player.inCar) honk();                       // Hupe
   if (e.code === 'KeyT') startFuel();                                   // Tanken (an der Zapfsäule)
   if (e.code === 'KeyN' && canSiren() && player.inCar) setSiren(!job.siren);   // Sirene
-  if (e.code === 'KeyK' && (player.inCar || pcar.group.position.distanceTo(headWorld) < 7)) toggleTrunk();   // Kofferraum auf/zu
+  if (e.code === 'KeyK') {                                               // Kofferraum auf/zu (eigenes Auto oder das eines anderen, wenn es entsperrt ist)
+    const own = player.inCar ? 0 : pcar.dead ? 1e9 : pcar.group.position.distanceTo(headWorld), rt = !seated() && nearRemoteTrunk(3.5);
+    if (rt && rt.d < own) remoteTrunk(rt.p); else if (own < 7) toggleTrunk();
+  }
   if (e.code === 'KeyQ') deskItemToggle();                               // Essen/Trinken aufheben bzw. loslassen (Maustaste halten = essen/trinken)
   if (e.code === 'KeyG' && vehicle.id === 'roadster' && player.inCar) jetOn();   // Raumflug (Tesla Roadster)
   if (e.code === 'KeyM' && vehicle.emerg === 'fire' && player.inCar) setHose(!job.hose);   // Wasserwerfer (Feuerwehr)
@@ -6317,7 +6340,8 @@ function onNet(m) {
     if (m.hit) onHit(m.hit, p);
     if (m.arrest && wanted.stars) { const fine = busted(p.name + ' (Polizei)'); netSig(p.id, { reward: Math.max(200, fine) }); }   // von einem Polizisten festgenommen
     if (m.reward) { money += m.reward; save.st.arrest++; msg('Festnahme erfolgreich! +' + m.reward + ' €', 4); uiTone(SND.arrive); }
-    if (m.pay || m.gift || m.zero) onMoney(p, m);                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
+    if (m.pay || m.gift || m.zero) onMoney(p, m);
+    if (m.tk !== undefined) onTrunkReq(m.tk);                            // anderer Spieler öffnet/schließt meinen Kofferraum                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
     if (m.killed) { msg('Du hast ' + p.name + ' erledigt!', 3); money += 100; }
   }
 }
@@ -6523,6 +6547,7 @@ function myState() {
   if (pcar.jet?.on && player.inCar) st.jt = 1;                           // Raumflug: andere sehen die Flammen
   if (job.hose) st.hs = 1;                                               // Wasserwerfer an
   if (pcar.trunk && pcar.trunk.a > .01) st.tk = r2(pcar.trunk.a);        // Kofferraum offen
+  if (pcar.trunk && vehicle.type !== 'scooter') { const l = shopItems.filter(i => i.trunk).slice(0, 16); if (l.length) st.ti = l.map(i => [i.type, r2(i.mesh.position.x), r2(i.mesh.position.y), r2(i.mesh.position.z), r2(i.mesh.rotation.y), r2(i.mesh.scale.x)]); }   // Kofferraum-Inhalt sehen die anderen
   // CarPlay des Fahrers, damit Mitfahrer dasselbe auf den Displays sehen
   if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on && POI[nav.n] ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0, r: radio.on ? radio.st : -1, v: r2(save.vol) };
   st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
@@ -6576,7 +6601,7 @@ function updNet(dt) {
 }
 
 // ---------- Mitfahren: in das Auto eines anderen Spielers einsteigen ----------
-const SEAT_NAMES = ['Fahrer', 'Beifahrer', 'hinten links', 'hinten rechts'];
+const SEAT_NAMES = ['Fahrer', 'Beifahrer', 'hinten links', 'hinten rechts', 'im Kofferraum links', 'im Kofferraum rechts'];
 const rideCar = () => { const d = player.ride && net.players.get(player.ride.id); return d?.carMesh?.visible ? d.carMesh : null; };
 // Auto, an dem ein Spieler gerade festgemacht ist (als Fahrer oder Mitfahrer)
 function carFrame(p, s, self) {
@@ -6626,7 +6651,7 @@ function leaveRide(why) {
   const d = net.players.get(r.id), cm = d?.carMesh;
   if (cm) {
     const meta = metaOf(d.carType), s = meta.seats[r.seat] || meta.seats[1], side = Math.sign(s.x) || 1;
-    cm.updateMatrixWorld(true); cm.localToWorld(v2.set(side * (meta.half.x + .9), 0, s.z));
+    cm.updateMatrixWorld(true); cm.localToWorld(s.trunk ? v2.set(s.x, 0, s.z - 1.8) : v2.set(side * (meta.half.x + .9), 0, s.z));   // Kofferraum: hinten raus
     placeHeadAt(v2.x, v2.z); (d.dp ||= {})[r.seat] = 1.4;
   }
   if (why !== '') msg(why || 'Ausgestiegen', 2);
@@ -6637,13 +6662,13 @@ function rideSeat() {
   if (!d || !(d.st?.c || d.st?.pk) || !cm?.visible || d.st.d) return leaveRide((d ? d.name : 'Der Fahrer') + ' ist weg – ausgestiegen');
   const seats = metaOf(d.carType).seats;
   if (player.ride.seat === 0 && d.st.c) {                               // Besitzer steigt ein -> Fahrersitz frei machen
-    const free = [1, 2, 3].find(i => i < seats.length && !seatTaken(d.id, i));
+    const free = seats.map((_, i) => i).find(i => i > 0 && !seatTaken(d.id, i));
     if (free === undefined) return leaveRide(d.name + ' ist eingestiegen – kein Platz mehr');
     player.ride.seat = free; msg(d.name + ' ist eingestiegen – du sitzt jetzt ' + SEAT_NAMES[free], 3);
   }
   const seat = seats[player.ride.seat] || seats[seats.length - 1];
   const head = cm.localToWorld(v1.copy(seat));
-  dolly.rotation.set(0, d.cyaw + Math.PI, 0);
+  dolly.rotation.set(0, d.cyaw + (seat.trunk ? 0 : Math.PI), 0);       // Kofferraum: Blick nach hinten raus
   const off = v2.copy(player.calib).applyAxisAngle(UP, dolly.rotation.y);
   dolly.position.set(head.x - off.x, head.y - off.y + player.seatOff, head.z - off.z);
 }
@@ -6703,7 +6728,7 @@ function updRemoteCar(p, dt) {
     p.cmCh = cm.getObjectByName('chassis'); p.cmWheels = []; p.cmDoors = []; p.cmScreens = [];
     cm.traverse(o => { if (o.name === 'wheel') p.cmWheels.push(o); if (/^door\d$/.test(o.name)) p.cmDoors[+o.name[4]] = o; if (o.isMesh && o.userData.screen) p.cmScreens.push({ m: o, orig: o.material }); });
     p.cmHandles = p.cmDoors.map(pv => pv?.getObjectByName('handle') || null);   // echte Türgriffe zum Einsteigen
-    p.cmTrunk = cm.getObjectByName('trunk') || null; p.cmTrunkGlass = cm.getObjectByName('trunkglass') || null;
+    p.cmTrunk = cm.getObjectByName('trunk') || null; p.cmTrunkGlass = cm.getObjectByName('trunkglass') || null; p.cmTrunkH = p.cmTrunk?.getObjectByName('thandle') || null;
     p.cmWins = p.cmDoors.map((pv, i) => { const l = []; pv?.children.forEach(o => { if (o.isMesh && o.userData.win === i) l.push({ m: o, y0: o.position.y, drop: o.userData.drop }); }); return l.length ? l : null; });
     p.winVal = p.cmDoors.map(() => 0);
     p.alarmOn = false; p.dentN = 0; p.dmSeen = 0;
@@ -6743,6 +6768,7 @@ function updRemoteCar(p, dt) {
     const U = p.cmTrunk.userData; U.a = (U.a || 0) + ((s.tk || 0) - (U.a || 0)) * Math.min(1, dt * 6);
     setTrunkPose(p.cmTrunk, p.cmTrunkGlass, U.a, U.drop, U.glassH); doorSound(U, U.a, p.cmTrunk, dt, sv => slamCar(p.sl || (p.sl = {}), 0, sv));
   }
+  syncTrunkItems(p, s);
   // Fenster: Fahrer (wd), Mitfahrer (rw) – mein eigener Sitz sofort aus meiner Eingabe
   for (let i = 0; i < p.winVal.length; i++) {
     let t = i === 0 ? (s.wd || 0) : 0;
@@ -6767,6 +6793,20 @@ function updRemoteCar(p, dt) {
   p.car = s.c || null;
 }
 
+
+// Kofferraum-Inhalt eines anderen Spielers (Essen, Getränke) an derselben Stelle in seinem Auto zeigen
+function syncTrunkItems(p, s) {
+  if (s === p.tiSt && p.tiCh === p.cmCh) return; p.tiSt = s;
+  const key = s.ti ? JSON.stringify(s.ti) : '';
+  if (key === (p.tiKey || '') && p.tiCh === p.cmCh) return;
+  for (const m of p.tiMeshes || []) m.parent?.remove(m);
+  p.tiMeshes = []; p.tiKey = key; p.tiCh = p.cmCh;
+  if (!p.cmCh || !s.ti) return;
+  for (const [type, x, y, z, ry, sc] of s.ti) {
+    if (!ITEM_BUILD[type]) continue;
+    const m = new THREE.Mesh(itemGeo(type), itemMat); m.position.set(x, y, z); m.rotation.y = ry || 0; m.scale.setScalar(sc || 1); p.cmCh.add(m); p.tiMeshes.push(m);
+  }
+}
 
 // Avatar aus einem Zustand (Kopf, Hände, Handy) bewegen – für andere Spieler und für dich selbst (Selfie)
 const _frq = new THREE.Quaternion(), _tq = new THREE.Quaternion();
@@ -7237,6 +7277,10 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     const lim = trunk.drop ? tb.min.y + .25 : tb.min.y - .03, fh = ray.intersectObjects(fl, false).find(x => x.point.y < lim && x.point.y > .25);   // Boden liegt unter der Ladekante
     const floor = fh ? fh.point.y : Math.max(.35, tb.min.y - .35);
     trunk.vol = { x: Math.min(halfW * .62, .7), z0: tb.min.z + (trunk.drop ? .1 : .06), z1: trunk.drop ? tb.min.z + 1.05 : tb.max.z - .05, y0: floor, y1: floor + (trunk.drop ? .7 : .45) };
+    if (trunk.drop && seats.length === 4) {                              // Jeep: zwei Mitfahrer-Plätze im Kofferraum (auf dem Ladeboden, Blick nach hinten raus)
+      const Q = trunk.vol, sl = Math.sign(eye.x) || 1;
+      for (const sx of [sl, -sl]) { const e = V(sx * Q.x * .55, Q.y0 + .78, (Q.z0 + Q.z1) / 2 + .05); for (let i = 0; i < 14 && roofGap(e) < .12; i++) e.y -= .02; e.trunk = true; seats.push(e); }
+    }
   }
   const uvBounds = m => { const a = m.geometry.attributes.uv; if (!a) return null; let u0 = 1e9, u1 = -1e9, v0 = 1e9, v1 = -1e9; for (let i = 0; i < a.count; i++) { u0 = Math.min(u0, a.getX(i)); u1 = Math.max(u1, a.getX(i)); v0 = Math.min(v0, a.getY(i)); v1 = Math.max(v1, a.getY(i)); } return u1 - u0 > .05 && v1 - v0 > .05 ? { u0, u1, v0, v1 } : null; };
   c.screenUV = uvBounds(c.screen); c.screenOrig = c.screen.material;
@@ -7663,4 +7707,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, get money() { return money; }, set money(v) { money = v; } };
