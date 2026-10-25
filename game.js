@@ -1782,7 +1782,7 @@ function icon(g, kind, x, y, s = 1) {
 function drawApp() {
   const g = ag; phone.btns = []; g.clearRect(0, 0, PW, PH);
   const a = phone.app, at = time - phone.appT;
-  if (a !== 'camera') {
+  if (a !== 'camera' && !(a === 'incall' && vcRemote())) {
     const gr = g.createLinearGradient(0, 0, PW, PH); const sh = Math.sin(time * .3) * .1;
     gr.addColorStop(0, '#e20074'); gr.addColorStop(.55 + sh, '#5a1050'); gr.addColorStop(1, '#14081c');
     g.fillStyle = a === 'home' ? gr : '#111318'; g.fillRect(0, 0, PW, PH);
@@ -1998,7 +1998,8 @@ function drawApp() {
       g.globalAlpha = k; rr(g, 16, y, PW - 32, 62, 14, '#1e2129');
       rr(g, 28, y + 11, 40, 40, 20, '#e20074'); tx(g, p.name[0].toUpperCase(), 48, y + 31, 20); tx(g, p.name, 84, y + 24, 22, '#fff', 'left'); tx(g, d + ' m entfernt', 84, y + 46, 13, '#999', 'left');
       g.beginPath(); g.arc(PW - 50, y + 31, 20, 0, 7); g.fillStyle = '#2fc14f'; g.fill(); icon(g, 'tel', PW - 50, y + 31, .55);
-      g.globalAlpha = 1; btn(16, y, PW - 32, 62, 'call:' + p.id);
+      g.beginPath(); g.arc(PW - 100, y + 31, 20, 0, 7); g.fillStyle = '#2b6cff'; g.fill(); icon(g, 'camera', PW - 100, y + 31, .42);   // Videoanruf
+      g.globalAlpha = 1; btn(16, y, PW - 154, 62, 'call:' + p.id); btn(PW - 126, y, 52, 62, 'vcall:' + p.id); btn(PW - 74, y, 58, 62, 'call:' + p.id);
     });
   } else if (a === 'gal') {
     tx(g, 'Galerie', 24, 100, 34, '#fff', 'left', 700);
@@ -2029,22 +2030,38 @@ function drawApp() {
     const gr = g.createLinearGradient(0, 0, 0, PH); gr.addColorStop(0, '#203a5a'); gr.addColorStop(1, '#0b0f18'); g.fillStyle = gr; g.fillRect(0, 0, PW, PH);
     for (let i = 0; i < 3; i++) { const k = ((time * .8 + i / 3) % 1); g.beginPath(); g.arc(PW / 2, 210, 60 + k * 70, 0, 7); g.strokeStyle = `rgba(226,0,116,${.6 * (1 - k)})`; g.lineWidth = 4; g.stroke(); }
     rr(g, PW / 2 - 60, 150, 120, 120, 60, '#e20074'); tx(g, phone.call.name[0], PW / 2, 212, 60);
-    tx(g, phone.call.name, PW / 2, 330, 34, '#fff', 'center', 700); tx(g, 'eingehender Anruf' + '.'.repeat(1 + Math.floor(time * 2) % 3), PW / 2, 372, 20, '#bbb');
+    tx(g, phone.call.name, PW / 2, 330, 34, '#fff', 'center', 700); tx(g, (phone.call.vid ? 'eingehender Videoanruf' : 'eingehender Anruf') + '.'.repeat(1 + Math.floor(time * 2) % 3), PW / 2, 372, 20, '#bbb');
     const wob = Math.sin(time * 9) * 6;
     g.beginPath(); g.arc(90, PH - 170, 42, 0, 7); g.fillStyle = '#ff3b30'; g.fill(); icon(g, 'x', 90, PH - 170);
     g.beginPath(); g.arc(PW - 90, PH - 170 + wob, 42, 0, 7); g.fillStyle = '#34c759'; g.fill(); icon(g, 'tel', PW - 90, PH - 170 + wob, .9);
     tx(g, 'Ablehnen', 90, PH - 105, 18); tx(g, 'Annehmen', PW - 90, PH - 105, 18);
     btn(30, PH - 230, 120, 140, 'decline'); btn(PW - 150, PH - 230, 120, 140, 'accept');
   } else if (a === 'incall' || a === 'outgoing') {
-    g.fillStyle = '#0f1420'; g.fillRect(0, 0, PW, PH);
-    rr(g, PW / 2 - 60, 150, 120, 120, 60, '#e20074'); tx(g, phone.call.name[0], PW / 2, 212, 60);
-    tx(g, phone.call.name, PW / 2, 330, 34, '#fff', 'center', 700);
-    let st = 'Wählt' + '.'.repeat(1 + Math.floor(time * 2) % 3);
-    if (a === 'incall') { const s = Math.floor(time - phone.call.t0); st = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); for (let i = 0; i < 12; i++) { const hgt = 6 + Math.abs(Math.sin(time * 7 + i)) * 26; rr(g, PW / 2 - 66 + i * 11, 430 - hgt / 2, 6, hgt, 3, '#34c759'); } }
-    if (phone.call.state === 'offline') st = phone.call.text || 'Nicht erreichbar';
-    tx(g, st, PW / 2, 372, 22, '#bbb');
-    g.beginPath(); g.arc(PW / 2, PH - 170, 42, 0, 7); g.fillStyle = '#ff3b30'; g.fill(); icon(g, 'x', PW / 2, PH - 170);
-    btn(PW / 2 - 60, PH - 230, 120, 140, 'hangup');
+    const rv = a === 'incall' && vcRemote(), C0 = phone.call;
+    let st = (C0.vid ? 'Videoanruf' : 'Wählt') + '.'.repeat(1 + Math.floor(time * 2) % 3);
+    if (a === 'incall') { const s = Math.floor(time - C0.t0); st = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); }
+    if (C0.state === 'offline') st = C0.text || 'Nicht erreichbar';
+    if (rv) {                                                              // Video der anderen Person füllt den Bildschirm, oben/unten leicht abgedunkelt
+      const gt = g.createLinearGradient(0, 0, 0, 140); gt.addColorStop(0, 'rgba(0,0,0,.6)'); gt.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gt; g.fillRect(0, 0, PW, 140);
+      const gb = g.createLinearGradient(0, PH - 280, 0, PH); gb.addColorStop(0, 'rgba(0,0,0,0)'); gb.addColorStop(1, 'rgba(0,0,0,.65)'); g.fillStyle = gb; g.fillRect(0, PH - 280, PW, 280);
+      tx(g, C0.name, 22, 70, 26, '#fff', 'left', 800); tx(g, st, 22, 100, 16, '#ddd', 'left', 600);
+    } else {
+      g.fillStyle = '#0f1420'; g.fillRect(0, 0, PW, PH);
+      rr(g, PW / 2 - 60, 150, 120, 120, 60, '#e20074'); tx(g, C0.name[0], PW / 2, 212, 60);
+      tx(g, C0.name, PW / 2, 330, 34, '#fff', 'center', 700); tx(g, st, PW / 2, 372, 22, '#bbb');
+      if (a === 'incall') {
+        for (let i = 0; i < 12; i++) { const hgt = 6 + Math.abs(Math.sin(time * 7 + i)) * 26; rr(g, PW / 2 - 66 + i * 11, 430 - hgt / 2, 6, hgt, 3, '#34c759'); }
+        if (C0.vid) tx(g, 'Kamera von ' + C0.name + ' ist aus', PW / 2, 480, 14, '#8a93a6');
+      }
+    }
+    if (a === 'incall') {                                                  // Kamera an/aus
+      g.beginPath(); g.arc(PW / 2 - 75, PH - 170, 36, 0, 7); g.fillStyle = C0.vid ? '#2b6cff' : '#3a3f4a'; g.fill(); icon(g, 'camera', PW / 2 - 75, PH - 170, .7);
+      if (!C0.vid) { g.strokeStyle = '#ff3b30'; g.lineWidth = 4; g.beginPath(); g.moveTo(PW / 2 - 97, PH - 192); g.lineTo(PW / 2 - 53, PH - 148); g.stroke(); }
+      tx(g, C0.vid ? 'Kamera an' : 'Kamera aus', PW / 2 - 75, PH - 116, 13, '#ddd', 'center', 600); btn(PW / 2 - 120, PH - 215, 90, 120, 'vidtog');
+    }
+    const hx = a === 'incall' ? PW / 2 + 75 : PW / 2;
+    g.beginPath(); g.arc(hx, PH - 170, 42, 0, 7); g.fillStyle = '#ff3b30'; g.fill(); icon(g, 'x', hx, PH - 170);
+    btn(hx - 60, PH - 230, 120, 140, 'hangup');
   }
   tx(g, hhmm(), 28, 26, 18, '#fff', 'left'); tx(g, 'Telekom 4G   23%', PW - 20, 26, 15, '#fff', 'right');
   if (!['incoming', 'incall', 'outgoing'].includes(a)) { rr(g, PW / 2 - 60, PH - 16, 120, 6, 3, '#fff'); if (a !== 'home') btn(0, PH - 48, PW, 48, 'app:home'); }
@@ -2171,12 +2188,13 @@ function phoneAction(a) {
     if (it.type === 'clip') { l.download = 'stuttgart_' + Date.now() + '.' + it.ext; l.href = it.url; } else { l.download = 'stuttgart_' + Date.now() + '.png'; l.href = it.c.toDataURL('image/png'); }
     l.click(); msg('Gespeichert', 2); return;
   }
-  if (a.startsWith('call:')) {
-    const id = +a.slice(5), pl = net.players.get(id); if (!pl || phone.call) return;
-    phone.call = { id, name: pl.name, state: 'dial', t0: time }; openApp('outgoing');
-    netSig(id, { call: 'ring' });
+  if (a.startsWith('call:') || a.startsWith('vcall:')) {
+    const vid = a[0] === 'v', id = +a.slice(vid ? 6 : 5), pl = net.players.get(id); if (!pl || phone.call) return;
+    phone.call = { id, name: pl.name, state: 'dial', t0: time, vid }; openApp('outgoing');
+    netSig(id, vid ? { call: 'ring', v: 1 } : { call: 'ring' });
     return;
   }
+  if (a === 'vidtog' && phone.call) { phone.call.vid = !phone.call.vid; return; }
   if (a === 'accept' && phone.call) { ring.pause(); phone.call.state = 'active'; phone.call.t0 = time; openApp('incall', false); netSig(phone.call.id, { call: 'accept' }); callAudio(phone.call.id, true); return; }
   if (a === 'decline' || a === 'hangup') { if (phone.call) netSig(phone.call.id, { call: 'end' }); endCall(); }
 }
@@ -2185,6 +2203,13 @@ function endCall(text) {
   if (phone.call) callAudio(phone.call.id, false);
   if (text && phone.call) { phone.call.state = 'offline'; phone.call.text = text; phone.drawT = 0; const c = phone.call; setTimeout(() => { if (phone.call === c) { phone.call = null; openApp('home'); } }, 2000); return; }
   phone.call = null; phone.seq = null; openApp('home');
+}
+// B mit dem Handy in der Hand: das Handy bleibt genau dort in der Luft stehen (z.B. zum Filmen beim Videoanruf).
+// Zurück in die Hand: greifen oder A (PC: P) – dann fliegt es zu dir.
+function freezePhone() {
+  phoneG.updateWorldMatrix(true, false); phoneG.matrixWorld.decompose(phoneG.position, phoneG.quaternion, v1);
+  scene.add(phoneG); phone.where = 'air'; phone.tele = null; phone.cool = time + .4; phone.drawT = 0;
+  playAt(SND.click, phoneG.position, .6, 3); haptic(handBy('left'), .4, 60);
 }
 // Handy liegt am Magneten im Auto, du bist draußen: A drücken -> es fliegt zu deiner Hand
 function summonPhone() {
@@ -2209,8 +2234,8 @@ function phoneClickUV(uv) {
   if (phone.seq) return;
   phone.queue.push({ x: uv.x * PW, y: (1 - uv.y) * PH, at: time });
 }
-function startIncoming(name, id) {
-  phone.call = { id, name, state: 'ring', t0: time };
+function startIncoming(name, id, vid = false) {
+  phone.call = { id, name, state: 'ring', t0: time, vid };
   ring.currentTime = 0; ring.play().catch(() => { });           // 1) Ton spielt sofort
   if (phone.where === 'pocket' && !cp.conn) { setPhone('hand'); composePhone(); }   // mit dem Auto verbunden: Anruf kommt aufs Display
   sg.clearRect(0, 0, PW, PH);
@@ -2326,6 +2351,36 @@ function grabPoll(G = grab) {
   G.g.putImageData(G.img, 0, 0);
   for (const f of G.pending) f(G.can);
   G.pending = null;
+}
+// ---------- Videoanruf ----------
+// Bild des anderen: sein Handy filmt ihn mit der Frontkamera – berechnet wird es bei dir aus der Position seines Handys
+// (seine Figur ist ja bei dir in der Welt), es braucht also keinen Video-Stream. Oben rechts klein dein eigenes Bild.
+const vidRT = new THREE.WebGLRenderTarget(240, 512); vidRT.texture.colorSpace = THREE.SRGBColorSpace;
+const pipRT = new THREE.WebGLRenderTarget(120, 200); pipRT.texture.colorSpace = THREE.SRGBColorSpace;
+const vidCam = new THREE.PerspectiveCamera(80, 240 / 512, .05, 400); vidCam.layers.enable(SELF);
+const pipCam = new THREE.PerspectiveCamera(80, 120 / 200, .05, 400); pipCam.position.set(0, .069, .008); pipCam.rotation.set(0, Math.PI, 0); pipCam.layers.enable(SELF); phoneBody.add(pipCam);
+const pip = new THREE.Mesh(new THREE.PlaneGeometry(.024, .04), new THREE.MeshBasicMaterial({ map: pipRT.texture, toneMapped: false }));
+pip.position.set(.019, .046, .00595); pip.scale.x = -1; pip.visible = false; phoneBody.add(pip);   // gespiegelt wie beim echten Handy
+let vidT = 0, pipT = 0, vidWas = false;
+const vcRemote = () => { const c = phone.call; if (!c || c.state !== 'active') return null; const q = net.players.get(c.id); return q?.st?.vc && q.st.pp && q.phone ? q : null; };
+function renderVideoCall(dt) {
+  const inCall = phoneG.visible && phone.app === 'incall' && phone.call?.state === 'active' && !phone.anim && !phone.seq;
+  const rp = inCall ? vcRemote() : null, mine = !!(inCall && phone.call.vid);
+  pip.visible = mine;
+  if (rp) { feed.material.map = vidRT.texture; feed.scale.x = 1; feed.visible = true; vidWas = true; }
+  else if (vidWas) { vidWas = false; feed.material.map = rt.texture; feed.visible = false; setCamSide(!!phone.front); }
+  if (!rp && !mine) return;
+  vidT -= dt; pipT -= dt;
+  const doV = rp && vidT <= 0, doP = mine && pipT <= 0; if (!doV && !doP) return;      // andere Person 15 Bilder/s, du selbst 10 Bilder/s
+  const xr = renderer.xr.enabled, prev = renderer.getRenderTarget(), su = renderer.shadowMap.autoUpdate;
+  renderer.xr.enabled = false; renderer.shadowMap.autoUpdate = false; ui.visible = false; feed.visible = false; pip.visible = false;
+  try {
+    if (doV) {
+      vidT = 1 / 15; rp.phone.updateMatrixWorld(true); rp.phone.localToWorld(vidCam.position.set(0, .069, .008)); rp.phone.getWorldQuaternion(vidCam.quaternion); vidCam.rotateY(Math.PI); vidCam.updateMatrixWorld();
+      const pv = rp.phone.visible; rp.phone.visible = false; renderer.setRenderTarget(vidRT); renderer.render(scene, vidCam); rp.phone.visible = pv;
+    }
+    if (doP) { pipT = 1 / 10; renderer.setRenderTarget(pipRT); renderer.render(scene, pipCam); }
+  } finally { renderer.setRenderTarget(prev); renderer.xr.enabled = xr; renderer.shadowMap.autoUpdate = su; ui.visible = true; feed.visible = !!rp; pip.visible = mine; }
 }
 // Handykamera: am PC jedes Bild, in VR jedes 2. Bild (36 fps – echte Handys filmen mit 30). Schatten werden dafür nicht neu berechnet.
 let camFrame = 0;
@@ -3932,7 +3987,7 @@ function tryGrab(h) {
     if (Math.abs(r - pcar.wheelR) < .11 && Math.abs(l.z) < .15) { h.held = { type: 'wheel', last: Math.atan2(l.y, l.x) }; haptic(h, .3, 40); return; }
   }
   // Handy vom Magneten nehmen (auch von außen durch die offene Tür / das Fenster)
-  if (phone.where === 'holder' && phoneG.getWorldPosition(v1).distanceTo(p) < .15) { setPhone('hand'); phone.cool = time + 1.5; return; }
+  if ((phone.where === 'holder' || phone.where === 'air') && phoneG.getWorldPosition(v1).distanceTo(p) < .15) { setPhone('hand'); phone.cool = time + 1.5; return; }   // auch aus der Luft
   if (dashGrab(h, p)) return;                                            // heruntergefallene Dashcam aufheben
   { const itg = nearestItem(p, .22); if (itg) { holdItem(itg, h); return; } }   // Essen / Getränke aus dem Regal nehmen
   { const cg = nearestCartHandle(p, .16); if (cg) { h.held = { type: 'cart', cart: cg }; cg.held = h; haptic(h, .3, 40); return; } }   // Einkaufswagen am Griff schieben
@@ -4007,6 +4062,7 @@ function vrInput(dt) {
     else if (canEnter()) enterCar();
     else if (ride && !(phone.where === 'hand')) startRide(ride);
     else if (phone.where === 'pocket') setPhone('hand');
+    else if (phone.where === 'air') summonPhone();                     // schwebt irgendwo: fliegt zurück in die Hand
     else if (phone.where === 'holder') {
       if (player.inCar || nearHolder(2.2)) { setPhone('hand'); phone.cool = time + 1.5; }
       else summonPhone();                                              // Handy liegt im Auto: fliegt zu deiner Hand
@@ -4016,7 +4072,8 @@ function vrInput(dt) {
   // linker Controller: X = Fenster runter, Y = Fenster hoch (deine Tür)
   if (L?.down[4] && seated()) setWindow(1);
   if (L?.down[5] && seated()) setWindow(0);
-  if (Rh?.down[5] && player.inCar) exitCar();
+  if (Rh?.down[5] && phone.where === 'hand' && time > phone.cool) freezePhone();   // B mit Handy in der Hand: Handy bleibt in der Luft stehen
+  else if (Rh?.down[5] && player.inCar) exitCar();
   else if (Rh?.down[5] && player.ride) leaveRide();
   if (Rh?.down[3] && seated()) player.calib.copy(camera.position);
   if (!seated() && !player.fly && L?.gp) {
@@ -4077,7 +4134,7 @@ addEventListener('keydown', e => {
   }
   desk.keys[e.code] = true; if (xrOn()) return;
   if (e.code === 'KeyE' && !seated() && !rob.spot) { const s = robNear(headWorld, 1.9); if (s) robStart(s, null); }   // E halten = ausrauben
-  if (e.code === 'KeyB' && player.inCar) honk();                       // Hupe
+  if (e.code === 'KeyB') { if (phone.where === 'hand') freezePhone(); else if (player.inCar) honk(); }   // Handy in der Luft stehen lassen bzw. Hupe
   if (e.code === 'KeyT') startFuel();                                   // Tanken (an der Zapfsäule)
   if (e.code === 'KeyN' && canSiren() && player.inCar) setSiren(!job.siren);   // Sirene
   if (e.code === 'KeyK') {                                               // Kofferraum auf/zu (eigenes Auto oder das eines anderen, wenn es entsperrt ist)
@@ -4103,7 +4160,7 @@ addEventListener('keydown', e => {
     }
   }
   if (e.code === 'KeyP') {
-    if (phone.where === 'holder' && !player.inCar && !nearHolder(3)) summonPhone();
+    if ((phone.where === 'holder' && !player.inCar && !nearHolder(3)) || phone.where === 'air') summonPhone();
     else if (phone.where !== 'hand') { setPhone('hand'); document.exitPointerLock(); } else { setPhone('pocket'); lockMouse(); }
   }
   if (e.code === 'KeyH' && player.inCar) setPhone(phone.where === 'holder' ? 'hand' : 'holder');
@@ -6625,18 +6682,18 @@ function onNet(m) {
   if (m.t === 'scr') { showRemoteScreen(p, m.d); return; }
   if (m.t === 'sig') {
     if (m.rtc) onRTC(p, m.rtc);
-    if (m.call === 'ring') { if (phone.call || phone.seq) netSig(p.id, { call: 'busy' }); else startIncoming(p.name, p.id); }
+    if (m.call === 'ring') { if (phone.call || phone.seq) netSig(p.id, { call: 'busy' }); else startIncoming(p.name, p.id, !!m.v); }
     if (m.call === 'accept' && phone.call?.id === p.id) { phone.call.state = 'active'; phone.call.t0 = time; openApp('incall', false); callAudio(p.id, true); }
     if (m.call === 'busy' && phone.call?.id === p.id) endCall('Besetzt');
     if (m.call === 'end' && phone.call?.id === p.id) { if (phone.call.state === 'ring') phone.missed = p.name; endCall(phone.call.state === 'dial' ? 'Abgelehnt' : 'Aufgelegt'); }
     if (m.hit) onHit(m.hit, p);
     if (m.arrest && wanted.stars) { const fine = busted(p.name + ' (Polizei)'); netSig(p.id, { reward: Math.max(200, fine) }); }   // von einem Polizisten festgenommen
     if (m.reward) { money += m.reward; save.st.arrest++; msg('Festnahme erfolgreich! +' + m.reward + ' €', 4); uiTone(SND.arrive); }
-    if (m.pay || m.gift || m.zero) onMoney(p, m);
+    if (m.pay || m.gift || m.zero) onMoney(p, m);                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
     if (m.vmax !== undefined) setVmax(Number(m.vmax) || 0);              // Admin legt dein Auto-Tempo fest (Server lässt das nur vom Admin durch)
     if (m.tk !== undefined) onTrunkReq(m.tk);                            // anderer Spieler öffnet/schließt meinen Kofferraum
     if (m.tkTake) onTkTake(p, m.tkTake);                                 // ... nimmt etwas aus meinem offenen Kofferraum
-    if (m.tkGive) onTkGive(p, m.tkGive);                                 // ich habe etwas aus seinem Kofferraum bekommen                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
+    if (m.tkGive) onTkGive(p, m.tkGive);                                 // ich habe etwas aus seinem Kofferraum bekommen
     if (m.killed) { msg('Du hast ' + p.name + ' erledigt!', 3); money += 100; }
   }
 }
@@ -6813,7 +6870,7 @@ function myState() {
     l: vr && L ? pose(L.ctrl) : camPose(-.24, -.55, -.12),
     r: vr && Rh ? pose(Rh.ctrl) : desk.tool ? pose(desk.tool.obj) : camPose(.24, -.55, -.12),
     tl: vr ? toolOf(L) : '', tr: vr ? toolOf(Rh) : desk.tool?.name || '',
-    pp: phoneG.visible && phone.where === 'hand' ? pose(phoneG) : 0,
+    pp: phoneG.visible && phone.where !== 'pocket' ? pose(phoneG) : 0,
     c: 0, d: player.dead ? 1 : 0,
   };
   if (vr) { if (L?.held?.type === 'item') st.il = L.held.it.type; if (Rh?.held?.type === 'item') st.ir = Rh.held.it.type; } else if (heldDesk) st.ir = heldDesk.type;   // Ware in der Hand sehen die anderen
@@ -6845,8 +6902,9 @@ function myState() {
   if (pcar.trunk && vehicle.type !== 'scooter') { const l = shopItems.filter(i => i.trunk).slice(0, 16); if (l.length) st.ti = l.map(i => [i.type, r2(i.mesh.position.x), r2(i.mesh.position.y), r2(i.mesh.position.z), r2(i.mesh.rotation.y), r2(i.mesh.scale.x)]); }   // Kofferraum-Inhalt sehen die anderen
   // CarPlay des Fahrers, damit Mitfahrer dasselbe auf den Displays sehen
   if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on && POI[nav.n] ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0, r: radio.on ? radio.st : -1, v: r2(save.vol) };
-  st.lk = pcar.locked ? 1 : 0;
-  if (save.vmax !== undefined) st.vm = save.vmax;                        // vom Admin festgelegtes Tempo (zeigt das Admin Panel)                                          // abgeschlossen?
+  st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
+  if (phone.call?.state === 'active' && phone.call.vid && phoneG.visible) st.vc = 1;   // Videoanruf: meine Kamera ist an
+  if (save.vmax !== undefined) st.vm = save.vmax;                        // vom Admin festgelegtes Tempo (zeigt das Admin Panel)
   if (alarm.on) st.al = 1;                                              // Auto-Alarm (Licht + Hupe bei allen)
   // Im Auto: Kopf, Hände und Handy relativ zum Auto senden -> bei Tempo hängt nichts hinterher
   const fr = player.inCar ? c.group : player.ride ? rideCar() : null;
@@ -8000,8 +8058,8 @@ function frame() {
   mark('misc');
   updHolderShake(dt); updSelf(dt); updDash(dt); updSlideDoors(dt);
   mark('self');
-  renderPhoneCam(); renderDashcam();
+  renderPhoneCam(); renderVideoCall(dt); renderDashcam();
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, colliders, adminSpeed, setVmax, deli, deliOrder, deliEnd, nearRemoteTrunkItem, takeRemoteItem, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, colliders, adminSpeed, setVmax, freezePhone, summonPhone, vcRemote, deli, deliOrder, deliEnd, nearRemoteTrunkItem, takeRemoteItem, get money() { return money; }, set money(v) { money = v; } };
