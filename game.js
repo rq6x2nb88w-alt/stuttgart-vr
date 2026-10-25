@@ -2668,7 +2668,7 @@ const cbtn = (x, y, w, h, a) => cbtnList.push({ x, y, w, h, a });
 function localCarView() {
   return { btns: cp.btns, conn: cp.conn, app: cp.app, call: phone.call, callMin: cp.callMin, locked: pcar.locked, appT: cp.appT, name: net.name, veh: vehicle.name,
     players: [...net.players.values()], nav, speed: Math.abs(pcar.speed), pos: pcar.group.position, heading: pcar.heading, alert: cp.alert, banner: cp.banner, ripple: cp.ripple,
-    radio: radio.on ? radio.st : -1, vol: save.vol, fuel: save.fuel, canFuel: canFuel(), filling: fuelInfo.filling, onPad: onPad(), police: canSiren(), siren: job.siren, tune: save.tune[vehicle.id] || {}, local: true,
+    radio: radio.on ? radio.st : -1, vol: save.vol, fuel: save.fuel, vm: save.vmax, canFuel: canFuel(), filling: fuelInfo.filling, onPad: onPad(), police: canSiren(), siren: job.siren, tune: save.tune[vehicle.id] || {}, local: true,
     jet: vehicle.id === 'roadster', jetOn: !!pcar.jet?.on, emerg: vehicle.emerg || '', hose: !!job.hose, trunk: !!pcar.trunk && vehicle.type !== 'scooter', trunkOpen: (pcar.trunk?.anim ?? pcar.trunk?.a ?? 0) > .15 };
 }
 // Text auf mehrere Zeilen umbrechen
@@ -2966,6 +2966,8 @@ function drawClusterMain(g, W = localCarView()) {
   g.strokeStyle = '#ff4d4d'; g.lineWidth = 3; g.beginPath(); g.moveTo(cx, cy); g.lineTo(cx + Math.cos(va) * (R0 - 12), cy + Math.sin(va) * (R0 - 12)); g.stroke();
   tx(g, String(Math.round(kmh)), cx, cy + 18, 38, '#fff', 'center', 800); tx(g, 'km/h', cx, cy + 46, 12, '#9aa3b2', 'center', 600);
   tx(g, 'D', cx, cy - 30, 16, '#7fdc8f', 'center', 800);
+  const warnTxt = (W.fuel ?? 1) <= 0 ? 'TANK LEER' : W.vm === 0 ? 'TEMPO 0 (ADMIN)' : '';
+  if (warnTxt && Math.floor(time * 2) % 2) { rr(g, cx - 80, cy - 78, 160, 28, 8, '#b71c1c'); tx(g, warnTxt, cx, cy - 64, 15, '#fff', 'center', 800); }   // im Tacho blinkend
   // Tankanzeige + Radiosender
   const fu = clamp(W.fuel ?? 1, 0, 1), low = fu < .15 && Math.floor(time * 2) % 2;
   tx(g, 'Tank', 556, 240, 11, low ? '#ff5252' : '#9aa3b2', 'left', 700); rr(g, 590, 234, 140, 11, 5, '#1d2230'); rr(g, 590, 234, Math.max(4, 140 * fu), 11, 5, fu < .15 ? '#ff5252' : fu < .3 ? '#ffb300' : '#7fdc8f');
@@ -3205,13 +3207,14 @@ function updPlayerCar(dt) {
   if (c.jet?.on && !sc && !c.dead) { jetFly(c, dt, thr, brk); return; } // Roadster im Raumflug
   const inAir = !!c.air, boost = (save.vmax ?? 0) > 320;
   if (inAir && !boost) { thr = 0; brk = 0; }   // in der Luft greifen die Räder nicht (Admin-Tempo: über Bodenwellen weiter beschleunigen)
-  if (!sc && save.fuel <= 0) { if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Tank leer! Handy → Garage → Reparieren/holen bringt Benzin (50 €)', 3); } thr = 0; }   // Tank leer
+  if (!sc && save.fuel <= 0) { if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 6; carWarn('Tank leer!', 'Tanken: Zapfsäule (T) · oder Handy → Garage → Holen (50 €)'); } thr = 0; }   // Tank leer
   if (!sc && c.totaled) {                                                // Totalschaden: Motor springt nicht an, qualmt
-    if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Totalschaden! Handy → Garage → Reparieren/holen', 3); } thr = 0;
+    if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 6; carWarn('Totalschaden!', 'Handy → Garage → Reparieren/holen'); } thr = 0;
     if (Math.random() < dt * 6) { const f = g.localToWorld(V(0, 1, 1.6)); smoke.spawn(f.x, f.y, f.z, rand(-.4, .4), rand(1.5, 3), rand(-.4, .4), rand(3, 5)); }
   }
   const est = engStage(), vo = save.vmax !== undefined ? save.vmax / 3.6 : null;   // Motor-Tuning; vom Admin festgelegtes Tempo (0 – 1000 km/h) geht vor
   const maxV = vo ?? (sc ? 7 : ENGINES[est].v), acc = Math.max(sc ? 3.2 : ENGINES[est].a, (vo || 0) / 7), drag = .00035 * Math.min(1, (60 / Math.max(60, maxV)) ** 2);
+  if (thr > .05 && vo === 0 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 6; carWarn('Tempo 0 km/h', 'Vom Admin gesetzt · Admin Panel → Auto-Tempo → Normal'); }
   if (thr > .05) c.speed += (c.speed < 0 ? 14 : acc) * thr * dt;
   if (brk > .05) c.speed -= (c.speed > .5 ? (sc ? 6 : 14) : 4) * brk * dt;
   if (thr <= .05 && brk <= .05 && !inAir) c.speed -= Math.sign(c.speed) * Math.min(Math.abs(c.speed), (sc ? .8 : 1.2) * dt);
@@ -6381,9 +6384,11 @@ const nearPump = () => { const p = pcar.group.position; return pumps.some(q => M
 const canFuel = () => player.inCar && vehicle.type !== 'scooter' && Math.abs(pcar.speed) < .5 && save.fuel < .97 && nearPump();
 const PRICE_L = 1.79, TANK_L = 70;
 function startFuel() { if (!canFuel()) return; if (money < 2) return msg('Zu wenig Geld zum Tanken', 2); fuelInfo.filling = true; msg('Tankt …', 2); playAt(SND.click, pcar.group.position, .8, 3); }
+// Warnung beim Fahren (es gibt keine Text-Einblendungen mehr): Mitteilung aufs Handy + Warnton + Vibration, steht auch im Tacho
+function carWarn(title, text) { phone.notif = { title, text, t0: time, until: time + 5 }; phone.drawT = 0; uiTone(SND.warn); hands.forEach(h => haptic(h, .6, 160)); }
 function updFuel(dt) {
   if (vehicle.type === 'scooter') return;
-  if (player.inCar && !pcar.dead) save.fuel = Math.max(0, save.fuel - (Math.abs(pcar.speed) / 80000 + .0000012) * dt);   // großer Tank: reicht ca. 80 km
+  if (player.inCar && !pcar.dead) save.fuel = Math.max(0, save.fuel - (Math.min(Math.abs(pcar.speed), 70) / 80000 + .0000012) * dt);   // großer Tank: reicht ca. 80 km (Admin-Tempo leert ihn nicht in Minuten)
   if (save.fuel < .15 && !fuelInfo.warned && player.inCar) { fuelInfo.warned = true; msg('Tank fast leer – fahr zur Tankstelle!', 4); uiTone(SND.ding); }
   if (save.fuel > .3) fuelInfo.warned = false;
   if (fuelInfo.filling) {
@@ -7265,6 +7270,8 @@ function orientCar(parts, keepScale = false) {
   return bb;
 }
 const partBox = list => { const b = new THREE.Box3(); list.forEach(p => b.union(p.geo.boundingBox)); return b; };
+// Modelle ohne eigene Bildschirm-Teile: Mitte (x, y, z) + Breite der Displays auf den echten Flächen (per Strahl ausgemessen)
+const SCREEN_FIX = { porsche: { main: [-.02, .805, .443, .2], cluster: [.37, .862, .474, .2] } };
 // Tür im Modell offen gebaut (Porsche: rechte Tür steht offen) -> um die vordere Kante zuklappen, bis sie wie die Tür
 // der anderen Seite an der Karosserie anliegt. Sonst sieht sie immer offen aus und das ganze Auto wird schief zentriert.
 function closeOpenDoors(parts) {
@@ -7344,6 +7351,21 @@ function islands(geo) {
   for (let i = 0; i < n; i++) { const r = f(i); let b = out.get(r); if (!b) out.set(r, b = new THREE.Box3()); b.expandByPoint(v1.fromBufferAttribute(pos, i)); }
   return [...out.values()];
 }
+// Geometrie nach zusammenhängenden Stücken teilen: keep(box) entscheidet je Stück -> [Rest, ausgewählt] (oder null)
+function islandSplit(geo, keep) {
+  const pos = geo.attributes.position, n = pos.count, par = new Int32Array(n), seen = new Map();
+  for (let i = 0; i < n; i++) par[i] = i;
+  const f = a => { while (par[a] !== a) a = par[a] = par[par[a]]; return a; }, u = (a, b) => { a = f(a); b = f(b); if (a !== b) par[a] = b; };
+  for (let i = 0; i < n; i++) { const k = Math.round(pos.getX(i) * 1e4) + ',' + Math.round(pos.getY(i) * 1e4) + ',' + Math.round(pos.getZ(i) * 1e4); const j = seen.get(k); if (j === undefined) seen.set(k, i); else u(i, j); }
+  const ix = geo.index, T = ix ? ix.count : n, vi = t => ix ? ix.getX(t) : t;
+  for (let t = 0; t < T; t += 3) { u(vi(t), vi(t + 1)); u(vi(t), vi(t + 2)); }
+  const box = new Map(); for (let i = 0; i < n; i++) { const r = f(i); let b = box.get(r); if (!b) box.set(r, b = new THREE.Box3()); b.expandByPoint(v1.fromBufferAttribute(pos, i)); }
+  const pick = new Set(); for (const [r, b] of box) if (keep(b)) pick.add(r);
+  if (!pick.size) return null;
+  const A = [], B = []; for (let t = 0; t < T; t += 3) (pick.has(f(vi(t))) ? B : A).push(vi(t), vi(t + 1), vi(t + 2));
+  const mk = list => { const g = new THREE.BufferGeometry(); for (const k in geo.attributes) g.setAttribute(k, geo.attributes[k]); g.setIndex(list); return g.toNonIndexed(); };
+  return [mk(A), mk(B)];
+}
 // Echten Türgriff finden: kleines längliches Stück außen am Türblatt, hinten, etwa auf Hüfthöhe der Tür
 function findHandle(list, db, side) {
   const len = db.max.z - db.min.z, h = db.max.y - db.min.y, cx = (db.min.x + db.max.x) / 2;
@@ -7407,7 +7429,20 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   // "Lenkrad" laut Name, aber winzig oder in der Mitte (z.B. Porsche: nur ein Logo-Teil) -> nicht verwenden, echtes Lenkrad suchen
   {
     const named = parts.filter(p => STEER_RE.test(p.name) && !/column/i.test(p.name));
-    if (named.length) { const b = partBox(named), s = b.getSize(V()); if (Math.max(s.x, s.y) < .2 || Math.abs(b.getCenter(V()).x) < .12) named.forEach(p => { p.name = 'Hub_' + p.name.replace(/steer(ing)?/ig, 'st'); }); }
+    if (named.length) {
+      const b = partBox(named), s = b.getSize(V()), hc = b.getCenter(V());
+      let ok = Math.max(s.x, s.y) >= .2 && Math.abs(hc.x) >= .12;
+      if (!ok && Math.abs(hc.x) > .2) {                                  // nur das Logo in der Nabe (Porsche): das echte Lenkrad drumherum herauslösen (Kranz, Speichen, Nabe, Tasten)
+        const R = V(.22, .22, .13), reg = new THREE.Box3(hc.clone().sub(R), hc.clone().add(R));
+        for (const p of [...parts]) {
+          if (named.includes(p) || isGlass(p) || isBody(p) || doorKeyOf(p.name) || !p.geo.boundingBox.intersectsBox(reg)) continue;
+          const sp = islandSplit(p.geo, bx => reg.containsBox(bx)); if (!sp) continue;
+          p.geo = sp[0]; p.geo.computeBoundingBox(); sp[1].computeBoundingBox();
+          parts.push({ name: 'Steering_wheel_' + p.name, geo: sp[1], mat: p.mat, path: [], dec: false }); ok = true;
+        }
+      }
+      if (!ok) named.forEach(p => { p.name = 'Hub_' + p.name.replace(/steer(ing)?/ig, 'st'); });
+    }
   }
   // Lenkrad ohne Namen im Modell (z.B. Tesla-Joch): flaches, ringförmiges Teil vor dem Fahrersitz suchen
   if (!parts.some(p => STEER_RE.test(p.name))) {
@@ -7556,9 +7591,10 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
   const texScr = namedScr ? [] : parts.filter(p => p.mat.map && !isGlass(p) && !isBody(p) && !wheelParts.includes(p) && !steer.includes(p)).map(p => { const b = p.geo.boundingBox; return { p, c: b.getCenter(V()), s: b.getSize(V()) }; })
     .filter(q => q.s.x > .1 && q.s.x < .4 && q.s.y > .06 && q.s.y < .35 && q.s.z < .25 && q.c.y > top * .4 && q.c.y < top * .85 && q.c.z > sc.z - .15 && q.c.z < sc.z + .45);
   const mTablet = texScr.find(q => Math.abs(q.c.x) < .12 && q.s.y > q.s.x), mCluster = texScr.find(q => q !== mTablet && Math.abs(q.c.x - sc.x) < .15 && q.s.x > q.s.y);
+  for (const q of [mTablet, mCluster]) if (q) q.p.mat = M(0x050608, { roughness: .2, metalness: .1 });   // eigenes Bild des Modells weg: schwarzer Bildschirm, darauf liegt unser Display
   let wsGeo = null;
   for (const p of parts) {
-    if (wheelParts.includes(p) || p === mTablet?.p) continue;
+    if (wheelParts.includes(p)) continue;
     if (steer.includes(p)) { const g = simp(p.geo, p).clone().applyMatrix4(toWheel); t1 += triCount(g); ws.add(new THREE.Mesh(g, p.mat)); continue; }
     const glass = isGlass(p);
     if (glass && realDoors && isInt(p)) continue;                   // Innenseite der Scheiben: doppelt, würde die Sicht nur abdunkeln
@@ -7676,14 +7712,31 @@ function upgradePlayerCar(gltf, id = 'ferrari', own = true) {
     const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M(0x050608, { roughness: .2 })); m.name = name; m.userData.screen = true;
     m.position.copy(hit && hit.distance < L + .06 ? from.clone().addScaledVector(dir, hit.distance - .03) : tgt); m.lookAt(eye); ch.add(m); return m;   // nicht weit hinter das Ziel rutschen
   };
-  const ownScr = (q, w, h, name) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), M(0x050608, { roughness: .2 })); m.name = name; m.userData.screen = true; m.position.copy(q.c).addScaledVector(eye.clone().sub(q.c).normalize(), q.s.z / 2 + .006); m.lookAt(eye); ch.add(m); return m; };
-  if (!screen && mTablet) screen = { m: ownScr(mTablet, .26, .13, 'Display_main_extra') };   // an Stelle des Modell-Tablets
+  // Display bündig auf die Vorderseite eines Modell-Bildschirms legen (gleiche Neigung, so breit wie die Fläche, mittig)
+  const ownScr = (q, aspect, name) => {
+    const tmp = new THREE.Mesh(q.p.geo, new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })); ray.set(eye, q.c.clone().sub(eye).normalize()); ray.far = 3;
+    const h = ray.intersectObject(tmp, false)[0], P0 = h ? h.point : q.c.clone();
+    const n = h ? h.face.normal.clone() : eye.clone().sub(q.c).normalize(); if (n.dot(eye.clone().sub(P0)) < 0) n.negate();
+    let r = V(0, 1, 0).cross(n); if (r.lengthSq() < 1e-4) r = V(1, 0, 0); r.normalize(); const up = n.clone().cross(r).normalize();
+    let a0 = 1e9, a1 = -1e9, b0 = 1e9, b1 = -1e9; const a = q.p.geo.attributes.position;
+    for (let i = 0; i < a.count; i++) { v2.fromBufferAttribute(a, i).sub(P0); const da = v2.dot(r), db = v2.dot(up); a0 = Math.min(a0, da); a1 = Math.max(a1, da); b0 = Math.min(b0, db); b1 = Math.max(b1, db); }
+    let w = (a1 - a0) * .94, hh = w / aspect; if (hh > (b1 - b0) * .94) { hh = (b1 - b0) * .94; w = hh * aspect; }
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, hh), M(0x050608, { roughness: .2 })); m.name = name; m.userData.screen = true;
+    m.position.copy(P0).addScaledVector(r, (a0 + a1) / 2).addScaledVector(up, (b0 + b1) / 2).addScaledVector(n, .004);
+    m.quaternion.setFromRotationMatrix(new THREE.Matrix4().makeBasis(r, up, n)); ch.add(m); return m;
+  };
+  // feste Stellen für Modelle ohne eigene Bildschirm-Teile (Mitte von Display, Breite; schaut nach hinten zum Fahrer)
+  const fixScr = (x, y, z, w, aspect, name) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, w / aspect), M(0x050608, { roughness: .2 })); m.name = name; m.userData.screen = true; m.position.set(x, y, z); m.rotation.y = Math.PI; ch.add(m); return m; };
+  const FIX = SCREEN_FIX[id];
+  if (!screen && FIX) screen = { m: fixScr(...FIX.main, 2, 'Display_main_extra') };
+  if (!screen && mTablet) screen = { m: ownScr(mTablet, 2, 'Display_main_extra') };   // auf dem Modell-Tablet
   if (!screen) screen = { m: placeScreen(V(0, Math.min(sc.y - .02, eye.y - .2), sc.z + .2), .28, .14, 'Display_main_extra', V(0, eye.y, eye.z)) };   // nie in der Sichtlinie   // Strahl aus der Mitte zwischen den Sitzen (nicht durchs Lenkrad)
   c.screen = screen.m;
   // zweites Display hinter dem Lenkrad (das dem Lenkrad am nächsten liegt) – fehlt es, kommt ein Mini-Display über die Nabe
   let cluster = null;
   ch.traverse(o => { if (o.isMesh && o.userData.screen && o !== c.screen) { o.geometry.computeBoundingBox(); const d = Math.abs(o.geometry.boundingBox.getCenter(V()).x - sc.x); if (!cluster || d < cluster.d) cluster = { m: o, d }; } });
-  if (!cluster && mCluster) { const w = Math.min(.24, mCluster.s.x * .9); cluster = { m: ownScr(mCluster, w, w / 3, 'Display_cluster_extra') }; }   // auf der Anzeige hinter dem Lenkrad
+  if (!cluster && FIX) cluster = { m: fixScr(...FIX.cluster, 3, 'Display_cluster_extra') };
+  if (!cluster && mCluster) cluster = { m: ownScr(mCluster, 3, 'Display_cluster_extra') };   // auf der Anzeige hinter dem Lenkrad
   if (!cluster) cluster = { m: placeScreen(V(sc.x, Math.min(sc.y + .08, eye.y - .15), sc.z + .26), .22, .073, 'Display_cluster_extra') };
   c.cluster = cluster ? cluster.m : null;
   if (trunk) {                                                           // Laderaum unter dem Deckel / hinter der Rückbank (Boden per Strahl nach unten)
