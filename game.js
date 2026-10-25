@@ -288,7 +288,7 @@ function building(x, z, w, d, h, style, wall, opt = {}) {
   const ent = { kind: 'building', mesh: m }; m.userData.ent = ent; shootables.push(m);
   // begehbar (Schule, Supermarkt, Tankstellen-Shop): statt eines Klotzes Wände mit Tür – Innenraum kommt in buildInteriors()
   if (opt.enter) enterSpecs.push({ ent, x, z, w, d, h, kind: opt.enter, front: opt.front || [0, 1], kit, mx, mz, roof, wall, home: opt.home });
-  else colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+  else colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2, top: h + .5 });
   ent.fl = addFlammable({ kind: 'building', box: new THREE.Box3(new THREE.Vector3(x - w / 2, 0, z - d / 2), new THREE.Vector3(x + w / 2, h, z + d / 2)), mats: [mx, mz, roof], duration: rand(120, 200) });
   if (h > 20) for (let i = 0; i < 2; i++) box(rand(2, 4), 1.6, rand(2, 3), M(0x8a8d90), x + rand(-w / 3, w / 3), h + 0.8, z + rand(-d / 3, d / 3));
   if (kit) facadeSpecs.push({ ent, x, z, w, d, h, F, house: !!opt.house, shops: !!opt.shops, tint: new THREE.Color(opt.tint || wall), front: opt.front || [0, 1], door: !!opt.enter });
@@ -451,8 +451,8 @@ function updLights(dt) {
   const hw = new THREE.Mesh(hwGeo(HL), MAT.hw);
   hw.rotation.y = Math.PI / 2; hw.position.set(0, .03, HZ); scene.add(hw);
   const conc = M(0xb0aea8), steel = M(0xb8bcc0, { metalness: .7, roughness: .35 });
-  const rail = (x0, x1, z) => { if (x1 - x0 < 1) return; box(x1 - x0, .35, .12, steel, (x0 + x1) / 2, .7, z); colliders.push({ minX: x0, maxX: x1, minZ: z - .1, maxZ: z + .1 }); };
-  box(HL, .9, .6, conc, 0, .45, HZ); colliders.push({ minX: -HL / 2, maxX: HL / 2, minZ: HZ - .3, maxZ: HZ + .3 });
+  const rail = (x0, x1, z) => { if (x1 - x0 < 1) return; box(x1 - x0, .35, .12, steel, (x0 + x1) / 2, .7, z); colliders.push({ minX: x0, maxX: x1, minZ: z - .1, maxZ: z + .1, top: 1 }); };
+  box(HL, .9, .6, conc, 0, .45, HZ); colliders.push({ minX: -HL / 2, maxX: HL / 2, minZ: HZ - .3, maxZ: HZ + .3, top: 1 });
   rail(-HL / 2, HL / 2, HZ + 15);
   const gap = R[3];
   // Nordseite mit Auffahrten (Stadt + A81)
@@ -463,8 +463,8 @@ function updLights(dt) {
   // A81 nach Norden (Heilbronn)
   const z81a = -TS / 2, z81b = HZ - 15, L81 = z81b - z81a;
   const a81 = new THREE.Mesh(hwGeo(L81), MAT.hw); a81.position.set(HX, .035, (z81a + z81b) / 2); scene.add(a81);
-  box(.6, .9, L81, conc, HX, .45, (z81a + z81b) / 2); colliders.push({ minX: HX - .3, maxX: HX + .3, minZ: z81a, maxZ: z81b });
-  const railZ = (x, z0, z1) => { if (z1 - z0 < 1) return; box(.12, .35, z1 - z0, steel, x, .7, (z0 + z1) / 2); colliders.push({ minX: x - .1, maxX: x + .1, minZ: z0, maxZ: z1 }); };
+  box(.6, .9, L81, conc, HX, .45, (z81a + z81b) / 2); colliders.push({ minX: HX - .3, maxX: HX + .3, minZ: z81a, maxZ: z81b, top: 1 });
+  const railZ = (x, z0, z1) => { if (z1 - z0 < 1) return; box(.12, .35, z1 - z0, steel, x, .7, (z0 + z1) / 2); colliders.push({ minX: x - .1, maxX: x + .1, minZ: z0, maxZ: z1, top: 1 }); };
   railZ(HX + 15, z81a, z81b); railZ(HX - 15, z81a, R[4] - 9); railZ(HX - 15, R[4] + 9, z81b);
   // Zubringer Stadt -> A81
   const cl = HX - 15 - (HALF + 8);
@@ -500,7 +500,7 @@ function updLights(dt) {
     const deck = box(17, .6, 17, concT, TVT.x, by + 151, TVT.z); deck.rotation.y = .4;
     for (const o of [shaft, basket, win, deck]) o.userData.bld = true;      // der Turm zählt als Gebäude
     for (let i = 0; i < 8; i++) { const seg = new THREE.Mesh(new THREE.CylinderGeometry(.7 - i * .06, .75 - i * .06, 8, 12), M(i % 2 ? 0xffffff : 0xc81e1e)); seg.position.set(TVT.x, by + 155 + i * 8, TVT.z); seg.userData.bld = true; scene.add(seg); }
-    colliders.push({ minX: TVT.x - 5.5, maxX: TVT.x + 5.5, minZ: TVT.z - 5.5, maxZ: TVT.z + 5.5 });
+    colliders.push({ minX: TVT.x - 5.5, maxX: TVT.x + 5.5, minZ: TVT.z - 5.5, maxZ: TVT.z + 5.5, top: by + 222 });
     // kann angezündet werden (Feuerzeug unten am Turm): das Feuer frisst sich langsam nach oben
     addFlammable({ kind: 'building', tower: true, box: new THREE.Box3(new THREE.Vector3(TVT.x - 5.8, by, TVT.z - 5.8), new THREE.Vector3(TVT.x + 5.8, by + 158, TVT.z + 5.8)), mats: [concT], duration: 480 });
     sign(['FERNSEHTURM', 'STUTTGART'], 6, 2.2, TVT.x, by + 4, TVT.z + 5.8, 0, '#1d1d1d', '#ffffff', 'bold 60px system-ui', 512, 190);
@@ -666,7 +666,7 @@ function buildInteriors() {
     for (const o of [grp, ext]) { o.position.set(S.x, y0, S.z); o.rotation.y = rot; scene.add(o); }
     ext.userData.bld = true;                                              // Außenhülle der Läden = Gebäude
     const toW = (x, z) => V(x, 0, z).applyAxisAngle(UP, rot).add(V(S.x, 0, S.z));
-    const col = (x0, x1, z0, z1) => { const a = toW(x0, z0), b = toW(x1, z1); colliders.push({ minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z) }); };
+    const col = (x0, x1, z0, z1) => { const a = toW(x0, z0), b = toW(x1, z1); colliders.push({ minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z), top: y0 + S.h + .5 }); };
     const vc = [], emi = [], tex = new Map(), etex = new Map();
     const paint = (g, hex) => { const c = new THREE.Color(hex), n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) c.toArray(a, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; };
     const bx = (w, h, d, x, y, z, hex, list = vc) => { const g = new THREE.BoxGeometry(w, h, d).translate(x, y, z); g.deleteAttribute('uv'); list.push(paint(g, hex)); };
@@ -739,7 +739,7 @@ function buildInteriors() {
     const FT = ['burger', 'sandwich', 'apple', 'banana', 'chips', 'burger', 'apple', 'sandwich'], FL = ['chips', 'apple', 'banana', 'sandwich', 'burger', 'chips', 'banana', 'apple'].slice(0, 8);
     const DT = ['water', 'cola', 'saft', 'water', 'cola', 'saft', 'water', 'cola'], DL = ['saft', 'water', 'cola', 'water', 'saft', 'cola', 'water', 'saft'];
     if (S.home !== undefined) {                                           // Haus zum Kaufen: Tür ist zu, nur für den Besitzer offen
-      const a = toW(d0, HZ - .3), b = toW(d1, HZ); colliders.push({ minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z), lock: S.home });
+      const a = toW(d0, HZ - .3), b = toW(d1, HZ); colliders.push({ minX: Math.min(a.x, b.x), maxX: Math.max(a.x, b.x), minZ: Math.min(a.z, b.z), maxZ: Math.max(a.z, b.z), lock: S.home, top: y0 + S.h + .5 });
       const H0 = homes[S.home]; H0.door = toW((d0 + d1) / 2, HZ + 2.5); H0.y0 = y0;
       // Schild im Vorgarten
       const [sc, sg2] = C(256, 128), stex = T(sc, false); H0.signG = sg2; H0.signT = stex;
@@ -856,7 +856,7 @@ buildInteriors();
     const s = new THREE.Mesh(new THREE.PlaneGeometry(.42, .3), scr); s.position.set(0, 1.28, .28); s.rotation.x = -.2; g.add(s);
     const k = new THREE.Mesh(BOX, key); k.scale.set(.32, .04, .2); k.position.set(0, 1.02, .33); k.rotation.x = .5; g.add(k);
     shade(g); cull(g, 80);
-    colliders.push({ minX: g.position.x - .4, maxX: g.position.x + .4, minZ: g.position.z - .4, maxZ: g.position.z + .4 });
+    colliders.push({ minX: g.position.x - .4, maxX: g.position.x + .4, minZ: g.position.z - .4, maxZ: g.position.z + .4, top: 2 });
     robSpots.push({ kind: 'atm', name: 'Geldautomat', p: V(g.position.x + sx * .45, 1.1, g.position.z), cash: [400, 900], stars: 1, time: 6, cool: 0, scr });
   });
 }
@@ -907,7 +907,7 @@ function buildTankstelle(cx, cz, isSpawn) {
     pump.userData.ent = ent; shootables.push(pump);
     ent.fl = addFlammable({ kind: 'pump', box: new THREE.Box3().setFromObject(pump).expandByScalar(.2), mats: [pm], explodeAfter: 3, owner: ent });
     pumps.push({ x: kx + ix, z: cz + iz });
-    colliders.push({ minX: kx + ix - .6, maxX: kx + ix + .6, minZ: cz + iz - 2.25, maxZ: cz + iz + 2.25 });
+    colliders.push({ minX: kx + ix - .6, maxX: kx + ix + .6, minZ: cz + iz - 2.25, maxZ: cz + iz + 2.25, top: 2.3 });
   }
   building(cx + 16, cz, 14, 22, 4.6, 'shop', '#f0f0f0', { front: [-1, 0], enter: 'shop' });
   sign(['SHOP · BISTRO · WASCHANLAGE'], 12, 1, cx + 8.9, 4, cz, -Math.PI / 2, '#dd1d21', '#fff', 'bold 46px system-ui');
@@ -1217,7 +1217,7 @@ for (let i = 0; i <= N; i++) for (let k = 0; k < N; k++) for (const s of [-1, 1]
     const c = createCar(pick(CAR_COLORS), false); c.parked = true;
     c.group.position.set(x, 0, z);
     c.group.rotation.y = c.heading = axis === 'z' ? (s > 0 ? Math.PI : 0) : (s > 0 ? Math.PI / 2 : -Math.PI / 2);
-    colliders.push(axis === 'z' ? { minX: x - 1, maxX: x + 1, minZ: z - 2.3, maxZ: z + 2.3 } : { minX: x - 2.3, maxX: x + 2.3, minZ: z - 1, maxZ: z + 1 });
+    colliders.push(axis === 'z' ? { minX: x - 1, maxX: x + 1, minZ: z - 2.3, maxZ: z + 2.3, top: 1.7 } : { minX: x - 2.3, maxX: x + 2.3, minZ: z - 1, maxZ: z + 1, top: 1.7 });
     parked.push(c);
   }
 }
@@ -3292,9 +3292,9 @@ function jetFly(c, dt, thr, brk) {
   c.steerS = (c.steerS || 0) + (-(c.spin / 4.7) * .6 - (c.steerS || 0)) * Math.min(1, dt * 10);
   c.yawRate = c.steerS * 2.2; c.heading += c.yawRate * dt;
   g.position.x += Math.sin(c.heading) * c.speed * dt; g.position.z += Math.cos(c.heading) * c.speed * dt;
-  if (J.alt < 40) for (const lz of [1.5, -1.5]) {                          // unter Hausdachhöhe: nicht durch Gebäude
-    const p = g.localToWorld(v1.set(0, 0, lz)), r = 1.05;
-    for (const k of colliders) if (p.x > k.minX - r && p.x < k.maxX + r && p.z > k.minZ - r && p.z < k.maxZ + r) {
+  for (const lz of [1.5, -1.5]) {                                       // nur an Gebäuden/Hindernissen anstoßen, die wirklich so hoch sind (keine unsichtbaren Wände)
+    const p = g.localToWorld(v1.set(0, .15, lz)), r = 1.05;
+    for (const k of colliders) if (p.y < (k.top ?? 6) && p.x > k.minX - r && p.x < k.maxX + r && p.z > k.minZ - r && p.z < k.maxZ + r) {
       const dx1 = p.x - (k.minX - r), dx2 = (k.maxX + r) - p.x, dz1 = p.z - (k.minZ - r), dz2 = (k.maxZ + r) - p.z, m = Math.min(dx1, dx2, dz1, dz2);
       if (m === dx1) g.position.x -= dx1; else if (m === dx2) g.position.x += dx2; else if (m === dz1) g.position.z -= dz1; else g.position.z += dz2;
       crash(Math.abs(c.speed) * .6, p); c.speed *= -.2;
@@ -5543,7 +5543,7 @@ function updCops(dt) {
     p.x += Math.sin(c.yaw) * c.speed * dt; p.z += Math.cos(c.yaw) * c.speed * dt;
     pushOutOf(p, 1.3); p.y = surfaceAt(p.x, p.z); c.g.rotation.set(0, c.yaw, 0);
     copLights(c);
-    if (player.inCar && d < 3.2 && Math.abs(pcar.speed) > 6) { crash(Math.abs(pcar.speed) * .7, p.clone()); pcar.speed *= .4; c.speed = 0; }   // rammt
+    if (player.inCar && d < 3.2 && Math.abs(pcar.speed) > 6 && pcar.group.position.y - p.y < 1.5) { crash(Math.abs(pcar.speed) * .7, p.clone()); pcar.speed *= .4; c.speed = 0; }   // rammt
   }
   const close = wanted.cops.some(c => Math.hypot(me.x - c.g.position.x, me.z - c.g.position.z) < (seated() ? 6.5 : 4.5) && c.speed < 4);
   const slow = player.inCar ? Math.abs(pcar.speed) < 1.5 : true;
@@ -7707,4 +7707,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, colliders, get money() { return money; }, set money(v) { money = v; } };
