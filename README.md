@@ -44,6 +44,7 @@ node server.js
 ## Admin
 Wer sich **Gabriel** nennt, hat auf dem Handy die App **Admin Panel**: Tornado, Tsunami, NPC-Angriff, Gebäudebrand, Regen an/aus und „Alles stoppen“ – gilt für alle Spieler.
 - **Geld verschenken**: beliebig viel an jeden Spieler (oder sich selbst)
+- **Auto-Tempo**: Höchstgeschwindigkeit der Autos eines Spielers (oder die eigene) festlegen – 0, 50, 100, 200, 300, 500 oder 1000 km/h, „Normal“ = wieder wie das Motor-Tuning. Bleibt gespeichert, gilt auch im Roadster-Flug.
 - **Server herunterfahren** (mit Sicherheitsabfrage): bei allen friert die Welt ein, die anderen Spieler sind auf einmal weg, dann verschwindet ganz schnell alles außer den Gebäuden. Danach wird es schwarz, die „Stuttgart VR“-Animation mit „Suche nach Verbindung …“ läuft 3 s, und „Service wurde geschlossen für Reparierung“ ploppt auf. Der Server bleibt zu, bis der Admin im Popup **A** (PC: Leertaste) drückt – dann laden alle automatisch neu.
 
 ## Ordner

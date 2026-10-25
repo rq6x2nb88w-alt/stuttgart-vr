@@ -1873,11 +1873,12 @@ function drawApp() {
      ['rain', 'rain', weather.target ? 'Regen ausschalten' : 'Regen einschalten', weather.target ? 'es regnet gerade' : 'es ist gerade trocken', '#2b5d9b'],
      ['stop', 'stop', 'Alles stoppen', 'Tornado, Tsunami, Angriff beenden', '#444a55'],
      ['money', 'money', 'Geld verwalten', 'Geld geben oder Konto auf 0 setzen', '#1b5e20'],
+     ['garage', 'speed', 'Auto-Tempo', 'Höchstgeschwindigkeit 0 – 1000 km/h', '#4a148c'],
      ['power', 'shutdown', 'Server herunterfahren', 'Wartung: Spiel für alle schließen', '#263238']].forEach(([ic, act, n, sub, c], i) => {
-      const y = 160 + i * 62;
-      rr(g, 14, y, PW - 28, 56, 14, c); g.beginPath(); g.arc(44, y + 28, 20, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, ic, 44, y + 28, .6);
-      tx(g, n, 76, y + 20, 17, '#fff', 'left', 800); tx(g, sub, 76, y + 41, 12, 'rgba(255,255,255,.75)', 'left', 500);
-      btn(14, y, PW - 28, 56, 'adm:' + act);
+      const y = 158 + i * 57;
+      rr(g, 14, y, PW - 28, 52, 14, c); g.beginPath(); g.arc(44, y + 26, 19, 0, 7); g.fillStyle = 'rgba(0,0,0,.25)'; g.fill(); icon(g, ic, 44, y + 26, .58);
+      tx(g, n, 76, y + 18, 17, '#fff', 'left', 800); tx(g, sub, 76, y + 38, 12, 'rgba(255,255,255,.75)', 'left', 500);
+      btn(14, y, PW - 28, 52, 'adm:' + act);
     });
     if (sure) {                                                            // Sicherheitsabfrage (Knopf an anderer Stelle, damit Doppeltippen nichts auslöst)
       g.fillStyle = 'rgba(0,0,0,.72)'; g.fillRect(0, 0, PW, PH); btn(0, 0, PW, PH, 'adm:cancel');
@@ -1902,6 +1903,19 @@ function drawApp() {
       rr(g, PW - 104, y + 10, 78, 36, 12, '#2e7d32'); tx(g, 'Geben', PW - 65, y + 28, 15, '#fff', 'center', 800); btn(PW - 108, y, 94, 56, 'gift:' + p.id);
     });
     if (!net.players.size) tx(g, 'Sonst ist gerade niemand online', PW / 2, 318, 14, '#90a4ae');
+    rr(g, 14, PH - 104, PW - 28, 46, 14, '#37474f'); tx(g, '← Admin Panel', PW / 2, PH - 81, 17, '#fff', 'center', 700); btn(14, PH - 104, PW - 28, 46, 'app:admin');
+  } else if (a === 'admspeed') {
+    // Admin: Höchstgeschwindigkeit der Autos festlegen (Tempo wählen, dann Spieler antippen) – "Normal" = wieder wie das Motor-Tuning
+    rr(g, 0, 56, PW, 80, 0, '#4a148c'); tx(g, 'Auto-Tempo', 24, 88, 28, '#fff', 'left', 800); tx(g, 'Höchstgeschwindigkeit in km/h festlegen', 24, 118, 13, '#e1bee7', 'left', 500);
+    ADM_SPEEDS.forEach((v, i) => { const x = 10 + (i % 4) * 85, y = 146 + Math.floor(i / 4) * 46, on = bank.admV === v; rr(g, x, y, 80, 40, 12, on ? '#8e24aa' : '#263238'); tx(g, v < 0 ? 'Normal' : String(v), x + 40, y + 20, 16, '#fff', 'center', 800); btn(x, y, 80, 40, 'avel:' + i); });
+    tx(g, bank.admV < 0 ? 'Normal (wie das Motor-Tuning)' : 'Tempo: ' + bank.admV + ' km/h', PW / 2, 256, 18, '#ce93d8', 'center', 700);
+    [{ id: -1, name: 'Ich selbst', vm: save.vmax }, ...[...net.players.values()].slice(0, 5).map(q => ({ id: q.id, name: q.name, vm: q.st?.vm }))].forEach((q, i) => {
+      const y = 276 + i * 62;
+      rr(g, 14, y, PW - 28, 54, 14, '#1e2129'); rr(g, 26, y + 9, 36, 36, 18, i ? '#e20074' : '#b3001b'); tx(g, q.name[0].toUpperCase(), 44, y + 27, 18);
+      tx(g, q.name.slice(0, 13), 74, y + 19, 16, '#fff', 'left', 600); tx(g, q.vm === undefined ? 'normal' : q.vm + ' km/h', 74, y + 39, 12, '#ce93d8', 'left', 500);
+      rr(g, PW - 116, y + 9, 90, 36, 12, '#7b1fa2'); tx(g, 'Setzen', PW - 71, y + 27, 15, '#fff', 'center', 800); btn(PW - 120, y, 106, 54, 'vmx:' + q.id);
+    });
+    if (!net.players.size) tx(g, 'Sonst ist gerade niemand online', PW / 2, 360, 14, '#90a4ae');
     rr(g, 14, PH - 104, PW - 28, 46, 14, '#37474f'); tx(g, '← Admin Panel', PW / 2, PH - 81, 17, '#fff', 'center', 700); btn(14, PH - 104, PW - 28, 46, 'app:admin');
   } else if (a === 'bank') {
     // Bank: Kontostand, Geld an andere Spieler überweisen, letzte Buchungen
@@ -2123,6 +2137,8 @@ function phoneAction(a) {
   if (a.startsWith('aamt:')) { bank.admAmt = ADM_STEPS[+a.slice(5)]; return; }
   if (a.startsWith('gift:')) { adminGive(+a.slice(5)); return; }
   if (a.startsWith('zero:')) { adminZero(+a.slice(5)); return; }
+  if (a.startsWith('avel:')) { bank.admV = ADM_SPEEDS[+a.slice(5)]; return; }
+  if (a.startsWith('vmx:')) { adminSpeed(+a.slice(4)); return; }
   if (a.startsWith('bamt:')) { bank.amt = BANK_STEPS[+a.slice(5)]; return; }
   if (a.startsWith('pay:')) { transfer(+a.slice(4)); return; }
   if (a.startsWith('ring:')) { const r = RINGS[+a.slice(5)]; if (r) { ring.preview(r); writeSave(); } return; }
@@ -3110,22 +3126,23 @@ function updPlayerCar(dt) {
   if (!sc) { c.wheelSpin.rotation.z = c.spin; if (c.brakeMat) c.brakeMat.emissiveIntensity = c.dmg?.tl ? 0 : brk > .05 ? 4 : .5; }
   if (c.fly) { carFlight(c, dt); return; }                              // vom EF5-Tornado erfasst
   if (c.jet?.on && !sc && !c.dead) { jetFly(c, dt, thr, brk); return; } // Roadster im Raumflug
-  const inAir = !!c.air;
-  if (inAir) { thr = 0; brk = 0; }   // in der Luft greifen die Räder nicht
+  const inAir = !!c.air, boost = (save.vmax ?? 0) > 320;
+  if (inAir && !boost) { thr = 0; brk = 0; }   // in der Luft greifen die Räder nicht (Admin-Tempo: über Bodenwellen weiter beschleunigen)
   if (!sc && save.fuel <= 0) { if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Tank leer! Handy → Garage → Reparieren/holen bringt Benzin (50 €)', 3); } thr = 0; }   // Tank leer
   if (!sc && c.totaled) {                                                // Totalschaden: Motor springt nicht an, qualmt
     if (thr > .05 && time > (c.fuelMsgT || 0)) { c.fuelMsgT = time + 4; msg('Totalschaden! Handy → Garage → Reparieren/holen', 3); } thr = 0;
     if (Math.random() < dt * 6) { const f = g.localToWorld(V(0, 1, 1.6)); smoke.spawn(f.x, f.y, f.z, rand(-.4, .4), rand(1.5, 3), rand(-.4, .4), rand(3, 5)); }
   }
-  const est = engStage(), maxV = sc ? 7 : ENGINES[est].v, acc = sc ? 3.2 : ENGINES[est].a;   // Motor-Tuning
+  const est = engStage(), vo = save.vmax !== undefined ? save.vmax / 3.6 : null;   // Motor-Tuning; vom Admin festgelegtes Tempo (0 – 1000 km/h) geht vor
+  const maxV = vo ?? (sc ? 7 : ENGINES[est].v), acc = Math.max(sc ? 3.2 : ENGINES[est].a, (vo || 0) / 7), drag = .00035 * Math.min(1, (60 / Math.max(60, maxV)) ** 2);
   if (thr > .05) c.speed += (c.speed < 0 ? 14 : acc) * thr * dt;
   if (brk > .05) c.speed -= (c.speed > .5 ? (sc ? 6 : 14) : 4) * brk * dt;
   if (thr <= .05 && brk <= .05 && !inAir) c.speed -= Math.sign(c.speed) * Math.min(Math.abs(c.speed), (sc ? .8 : 1.2) * dt);
-  c.speed -= c.speed * Math.abs(c.speed) * .00035 * dt;
-  c.speed = clamp(c.speed, sc ? -1.5 : -9, maxV);
+  c.speed -= c.speed * Math.abs(c.speed) * drag * dt;
+  c.speed = clamp(c.speed, -Math.min(sc ? 1.5 : 9, maxV), maxV);
   let yawRate, steer = 0;
   if (sc) yawRate = -stx * 1.7 * clamp(Math.abs(c.speed) / 2.5, 0, 1) * (c.speed < 0 ? -1 : 1);
-  else { c.steerS = (c.steerS || 0) + (-(c.spin / 4.7) * .6 - (c.steerS || 0)) * Math.min(1, dt * 10); steer = c.steerS; yawRate = c.speed / 2.8 * Math.tan(steer); }   // Lenkung geglättet (Hand-Zittern filtern)
+  else { c.steerS = (c.steerS || 0) + (-(c.spin / 4.7) * .6 - (c.steerS || 0)) * Math.min(1, dt * 10); steer = c.steerS; yawRate = clamp(c.speed, -90, 90) / 2.8 * Math.tan(steer); }   // ab 90 m/s nicht noch schärfer lenken   // Lenkung geglättet (Hand-Zittern filtern)
   if (inAir) yawRate = 0;            // in der Luft lenkt man nicht
   c.yawRate = yawRate; c.heading += yawRate * dt;
   g.position.x += Math.sin(c.heading) * c.speed * dt; g.position.z += Math.cos(c.heading) * c.speed * dt;
@@ -3143,7 +3160,7 @@ function updPlayerCar(dt) {
     c.speed -= 9.8 * Math.sin(slope) * dt * .85;              // bergauf langsamer, bergab schneller
     c.slS = (c.slS ?? slope) + (slope - (c.slS ?? slope)) * sm; c.sdS = (c.sdS ?? side) + (side - (c.sdS ?? side)) * sm;
     // Boden fällt schneller weg als die Schwerkraft das Auto runterziehen kann -> abheben
-    if (!sc && Math.abs(c.speed) > 9 && gacc < -13) { c.air = true; c.vy = c.lastGvy ?? 0; c.airT = 0; }
+    if (!sc && Math.abs(c.speed) > 9 && gacc < -13 * Math.max(1, Math.abs(c.speed) / 90)) { c.air = true; c.vy = clamp(c.lastGvy ?? 0, -40, 35); c.airT = 0; }   // sehr schnell: nicht bei jeder Bodenwelle abheben, nie ins All schleudern
     else { g.position.y = gy; c.vy = gvy; }
     c.lastGvy = gvy;
   }
@@ -3211,7 +3228,7 @@ function updPlayerCar(dt) {
   }
   if (Math.abs(c.speed) > 3) for (const p of peds) if (p.alive && p.root.position.distanceTo(g.position) < 1.9) killPedNet(p, v1.set(Math.sin(c.heading), 0, Math.cos(c.heading)));
   if (engine) {
-    const s = Math.abs(c.speed);
+    const s = Math.min(Math.abs(c.speed), sc ? 15 : 95);                  // bei Admin-Tempo nicht unendlich hoch pfeifen
     if (sc) { engine.o1.frequency.value = 180 + s * 40; engine.o2.frequency.value = 90 + s * 20; engine.pa.setVolume(player.inCar && s > .3 ? .12 : 0); }
     else {
       const k = 1 - est * .07;                                             // getunt: tiefer, offener, lauter
@@ -3286,9 +3303,10 @@ function jetFly(c, dt, thr, brk) {
   else if (!up && J.t < 5 && J.alt < 3) up = clamp((3 - J.alt) * .6, .12, 1);   // beim Einschalten erst auf ca. 3 m steigen
   J.vy += (up * 22 - J.vy) * Math.min(1, dt * 1.8);
   J.alt = Math.min(700, Math.max(0, J.alt + J.vy * dt));
-  if (thr > .05) c.speed += 36 * thr * dt;
-  if (brk > .05) c.speed -= 50 * brk * dt;
-  c.speed -= c.speed * .4 * dt; c.speed = clamp(c.speed, -20, 95);
+  const top = save.vmax !== undefined ? save.vmax / 3.6 : 95;            // Admin-Tempo gilt auch im Flug
+  if (thr > .05) c.speed += Math.max(36, top * .5) * thr * dt;
+  if (brk > .05) c.speed -= Math.max(50, top * .4) * brk * dt;
+  c.speed -= c.speed * .4 * dt; c.speed = clamp(c.speed, -Math.min(20, top), top);
   c.steerS = (c.steerS || 0) + (-(c.spin / 4.7) * .6 - (c.steerS || 0)) * Math.min(1, dt * 10);
   c.yawRate = c.steerS * 2.2; c.heading += c.yawRate * dt;
   g.position.x += Math.sin(c.heading) * c.speed * dt; g.position.z += Math.cos(c.heading) * c.speed * dt;
@@ -4786,6 +4804,7 @@ function adminAction(k) {
   else if (k === 'rain') { const v = weather.target ? 0 : 1; weather.target = v; weather.t = 900; share('w', { v, t: 900 }); msg(v ? 'Regen an' : 'Regen aus', 2); }
   else if (k === 'stop') { stopDisasters(); share('dstop', {}); if (vil.i >= 0) { setVillain(-1); share('vil', { i: -1 }); } msg('Alles gestoppt', 2); }
   else if (k === 'money') openApp('admmoney');
+  else if (k === 'speed') openApp('admspeed');
   else if (k === 'shutdown') { bank.ask = time; }                       // erst fragen …
   else if (k === 'cancel') { bank.ask = -99; }
   else if (k === 'shutdown!') { if (time - bank.ask > .8 && time - bank.ask < 8) { bank.ask = -99; serverShutdown(); } }   // … dann wirklich
@@ -4795,7 +4814,8 @@ function adminAction(k) {
 // ===================================================================
 // Geld: überweisen (App "Bank"), Admin verschenkt Geld · Wartung: Admin fährt den Server herunter
 // ===================================================================
-const bank = { amt: 100, admAmt: 1000, ask: -99 };
+const bank = { amt: 100, admAmt: 1000, admV: 300, ask: -99 };
+const ADM_SPEEDS = [0, 50, 100, 200, 300, 500, 1000, -1];                 // km/h, -1 = normal
 const BANK_STEPS = [10, 50, 100, 500, 1000, 5000], ADM_STEPS = [100, 1000, 10000, 100000, 1000000];
 function addTx(text, d) { (save.tx ||= []).push({ text, d, ts: Date.now() }); if (save.tx.length > 20) save.tx.shift(); phone.drawT = 0; }
 function transfer(id) {
@@ -4814,6 +4834,12 @@ function adminZero(id) {
   if (id === -1) { const old = money; money = 0; addTx('Admin: Konto auf 0', -old); writeSave(); msg('Dein Konto steht jetzt auf 0 €', 2.5); return; }
   const p = net.players.get(id); if (!p) return; netSig(id, { zero: 1 }); msg('Konto von ' + p.name + ' auf 0 € gesetzt', 2.5);
 }
+// Admin: Höchstgeschwindigkeit der Autos eines Spielers (oder die eigene) – 0 bis 1000 km/h, "Normal" = wieder wie das Motor-Tuning
+function adminSpeed(id) {
+  if (!isAdmin()) return;
+  if (id === -1) setVmax(bank.admV); else if (net.players.get(id)) netSig(id, { vmax: bank.admV });
+}
+function setVmax(v) { if (v < 0) delete save.vmax; else save.vmax = clamp(Math.round(v), 0, 1000); writeSave(); phone.drawT = 0; uiTone(SND.ding); }   // bleibt gespeichert
 function onMoney(p, m) {
   if (m.zero) { const old = money; money = 0; addTx('Konto vom Admin auf 0 gesetzt', -old); writeSave(); uiTone(SND.warn); msg('Der Admin hat dein Konto auf 0 € gesetzt', 4); }
   if (m.pay > 0) { money += m.pay; addTx('Von ' + p.name, m.pay); writeSave(); uiTone(SND.arrive); msg(p.name + ' hat dir ' + m.pay.toLocaleString('de-DE') + ' € überwiesen', 4); }
@@ -6341,6 +6367,7 @@ function onNet(m) {
     if (m.arrest && wanted.stars) { const fine = busted(p.name + ' (Polizei)'); netSig(p.id, { reward: Math.max(200, fine) }); }   // von einem Polizisten festgenommen
     if (m.reward) { money += m.reward; save.st.arrest++; msg('Festnahme erfolgreich! +' + m.reward + ' €', 4); uiTone(SND.arrive); }
     if (m.pay || m.gift || m.zero) onMoney(p, m);
+    if (m.vmax !== undefined) setVmax(Number(m.vmax) || 0);              // Admin legt dein Auto-Tempo fest (Server lässt das nur vom Admin durch)
     if (m.tk !== undefined) onTrunkReq(m.tk);                            // anderer Spieler öffnet/schließt meinen Kofferraum                        // Überweisung / Admin-Geschenk / Admin setzt auf 0
     if (m.killed) { msg('Du hast ' + p.name + ' erledigt!', 3); money += 100; }
   }
@@ -6550,7 +6577,8 @@ function myState() {
   if (pcar.trunk && vehicle.type !== 'scooter') { const l = shopItems.filter(i => i.trunk).slice(0, 16); if (l.length) st.ti = l.map(i => [i.type, r2(i.mesh.position.x), r2(i.mesh.position.y), r2(i.mesh.position.z), r2(i.mesh.rotation.y), r2(i.mesh.scale.x)]); }   // Kofferraum-Inhalt sehen die anderen
   // CarPlay des Fahrers, damit Mitfahrer dasselbe auf den Displays sehen
   if (player.inCar && cp.on) st.cp = { a: cp.app, k: cp.conn ? 1 : 0, m: cp.callMin ? 1 : 0, n: nav.on && POI[nav.n] ? nav.n : '', c: phone.call && cp.conn && phone.call.state !== 'offline' ? [phone.call.name, phone.call.state, Math.round(time - (phone.call.t0 || time))] : 0, r: radio.on ? radio.st : -1, v: r2(save.vol) };
-  st.lk = pcar.locked ? 1 : 0;                                          // abgeschlossen?
+  st.lk = pcar.locked ? 1 : 0;
+  if (save.vmax !== undefined) st.vm = save.vmax;                        // vom Admin festgelegtes Tempo (zeigt das Admin Panel)                                          // abgeschlossen?
   if (alarm.on) st.al = 1;                                              // Auto-Alarm (Licht + Hupe bei allen)
   // Im Auto: Kopf, Hände und Handy relativ zum Auto senden -> bei Tempo hängt nichts hinterher
   const fr = player.inCar ? c.group : player.ride ? rideCar() : null;
@@ -7707,4 +7735,4 @@ function frame() {
   mark('phoneCam');
 }
 window.__game = { pcar, player, phone, npcCars, peds, props, flammables, burning, ignite, explode, scene, renderer, camera, desk, TOOLS, startIncoming, net, phoneAction, hands, vrInput, ui, laser, step: () => frame(), getVehicle, weather, startMission, get mission() { return mission; }, get vehicle() { return vehicle; }, groundAt, surfaceAt, get me() { return me; }, cp, nav, carClickUV, startNav, findRoute, POI, cl, vil, setVillain, alarm, fireAlert, cabinLift, dash, dashStart, dashStop, dashFly, dashMount, crash, carDamage, repairCar, setWindow, hearFactor, rideScr: () => rideScr, enterCar, exitCar, interiors, startRide, leaveRide, adminAction, disaster, isAdmin, flying, allNpc,
-  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, colliders, get money() { return money; }, set money(v) { money = v; } };
+  save, job, startJob, endJob, wanted, addWanted, robSpots, rob, radio, setRadio, buyTune, homes, buyHome, dog, sendChat, day, pumps, tuningPad, startFuel, honk, writeSave, bank, transfer, adminGive, maint, serverShutdown, onShutdown, ring, RINGS, ENGINES, engStage, openApp, VEHICLES, jetOn, setSiren, setHose, canSiren, hoseFx, shopItems, shopStands, shopLanes, holdItem, dropItem, nearestItem, useItem, updPay, doPay, heldDesk: () => heldDesk, deskItemToggle, itemGeo, interiors, supportY, mouthPos, drawLane, drawPayPopup, composePhone, appCan, pg, AS, orientCar, upgradePlayerCar, tryGrab, release, carts, toggleTrunk, adminZero, putInCart, putInTrunk, trunkSave, makeItem, rideTarget, remoteTrunk, nearRemoteTrunk, metaOf, colliders, adminSpeed, setVmax, get money() { return money; }, set money(v) { money = v; } };

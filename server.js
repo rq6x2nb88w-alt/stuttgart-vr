@@ -109,7 +109,7 @@ function wsAccept(req, sock) {
         for (const o of clients.values()) wsSend(o, JSON.stringify({ t: 'reopened' }));
       } else if (maint) continue;
       else if (['s', 'ev', 'npc', 'scr'].includes(msg.t)) { msg.from = c.id; broadcast(JSON.stringify(msg), c); }
-      else if (msg.t === 'sig') { if ((msg.gift || msg.zero) && !isAdmin(c)) continue; const to = clients.get(msg.to); if (to) { msg.from = c.id; wsSend(to, JSON.stringify(msg)); } }
+      else if (msg.t === 'sig') { if ((msg.gift || msg.zero || msg.vmax !== undefined) && !isAdmin(c)) continue; const to = clients.get(msg.to); if (to) { msg.from = c.id; wsSend(to, JSON.stringify(msg)); } }
     }
   });
   sock.on('close', bye); sock.on('error', bye);
